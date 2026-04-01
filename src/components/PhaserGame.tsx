@@ -247,24 +247,30 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
              this.blocks.create(i+16, 440, 'block');
              this.blocks.create(i+16, 472, 'block');
            }
+           
+           class SeededRandom {
+              seed: number;
+              constructor(s: number) { this.seed = s; }
+              next() { this.seed = (this.seed * 9301 + 49297) % 233280; return this.seed / 233280; }
+           }
+           const rng = new SeededRandom(lvl * 12345); // deterministic seed based on level
 
            const density = Math.min(0.6, 0.1 + (lvl * 0.08)); 
            
            for(let i=1; i<45; i++) {
               let baseX = 400 + (i * 150);
-              
-              const rand = Math.random();
-              if (rand < density * 0.4) {
+              const rand1 = rng.next();
+              if (rand1 < density * 0.4) {
                  this.obstacles.create(baseX, 408, 'spike');
-              } else if (rand < density * 1.5) {
+              } else if (rand1 < density * 1.5) {
                  const en = this.enemies.create(baseX, 408, 'enemy');
                  (en.body as Phaser.Physics.Arcade.Body).allowGravity = true;
-                 en.setVelocityX(Math.random() > 0.5 ? 60 : -60);
+                 en.setVelocityX(rng.next() > 0.5 ? 60 : -60);
                  (en.body as Phaser.Physics.Arcade.Body).setBounceX(1);
               }
               
-              if (Math.random() > 0.6) {
-                 if (Math.random() > 0.7) {
+              if (rng.next() > 0.6) {
+                 if (rng.next() > 0.7) {
                     const qb = this.qBlocks.create(baseX, 320, 'qblock');
                     qb.setData('active', true);
                  } else {
@@ -274,7 +280,6 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
            }
 
            this.flags.create(7500, 368, 'flag');
-           
            this.musicPowerUp();
         }
 
@@ -317,16 +322,16 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
         createJoystick() {
           this.input.addPointer(3); 
           const createBtn = (x:number, y:number, txt:string, action:string) => {
-             const btn = this.add.circle(x, y, 45, 0xffffff, 0.4).setScrollFactor(0).setInteractive();
-             this.add.text(x, y, txt, { fontSize: '26px', color:'#000', fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0);
+             const btn = this.add.circle(x, y, 40, 0xffffff, 0.4).setScrollFactor(0).setInteractive();
+             this.add.text(x, y, txt, { fontSize: '24px', color:'#000', fontStyle:'bold' }).setOrigin(0.5).setScrollFactor(0);
              btn.on('pointerdown', () => (this.joyKeys as any)[action] = true); btn.on('pointerup', () => (this.joyKeys as any)[action] = false);
              btn.on('pointerout', () => (this.joyKeys as any)[action] = false);
              btn.on('pointerover', (p:Phaser.Input.Pointer) => { if (p.isDown) (this.joyKeys as any)[action] = true; });
           };
-          const cx = 130; const cy = 370; const off = 80; 
+          const cx = 110; const cy = 370; const off = 65; 
           createBtn(cx - off, cy, '◀', 'left'); createBtn(cx + off, cy, '▶', 'right');
           createBtn(cx, cy - off, '▲', 'jump'); createBtn(cx, cy + off, '▼', 'down');
-          createBtn(700, 390, 'JUMP', 'jump'); 
+          createBtn(730, 400, 'JUMP', 'jump'); 
         }
 
         takeDamage(player: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody) {
