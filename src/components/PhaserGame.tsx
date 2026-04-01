@@ -41,6 +41,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
         
         hearts = 3;
         gameOver = false;
+        gameWon = false;
         
         constructor() {
           super({ key: 'MainScene' });
@@ -231,14 +232,20 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
              }
           });
 
-          // Hacky "Mario" background music
-          let notes = [261.63, 261.63, 261.63, 261.63, 207.65, 233.08];
+          // Retro "Shooting / Action" background music
+          const melody = [ 440, 0, 440, 523, 659, 0, 587, 523, 392, 0, 392, 440, 523, 0, 493, 440 ];
+          const bass = [ 110, 110, 110, 110, 146.8, 146.8, 146.8, 146.8, 98, 98, 98, 98, 130.8, 130.8, 130.8, 130.8 ];
           let noteIdx = 0;
-          this.bgmInterval = window.setInterval(() => { // Keep interval out of Phaser time to avoid pause issues
-             if(this.gameOver) return;
-             // playAudio(notes[noteIdx % notes.length], 'square', 0.1);
-             // noteIdx++;
-          }, 300) as unknown as number; // Optional BG music beep loop
+          this.bgmInterval = window.setInterval(() => {
+             if(this.gameOver || this.gameWon) return;
+             if (melody[noteIdx % melody.length] > 0) {
+                 this.playAudio(melody[noteIdx % melody.length], 'square', 0.12);
+             }
+             if (bass[noteIdx % bass.length] > 0) {
+                 this.playAudio(bass[noteIdx % bass.length], 'sawtooth', 0.2); // bassline
+             }
+             noteIdx++;
+          }, 150) as unknown as number; // 150ms upbeat action tempo
         }
 
         createJoystick() {
