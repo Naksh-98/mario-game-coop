@@ -39,12 +39,18 @@ app.prepare().then(() => {
       io.to('game').emit('stateUpdate', state);
     });
 
-    socket.on('updateState', ({ role, x, y, anim, flipX }) => {
+    socket.on('updateState', ({ role, x, y, anim, flipX, scale }) => {
       if (role === 'p1' || role === 'p2') {
-        state[role] = { ...state[role], x, y, anim, flipX };
+        state[role] = { ...state[role], x, y, anim, flipX, scale };
         // Broadcast to game room
         socket.broadcast.to('game').emit('stateUpdate', state);
       }
+    });
+
+    socket.on('nextLevel', (levelNumber) => {
+        state.p1.x = 150; state.p1.y = 360;
+        state.p2.x = 80; state.p2.y = 360;
+        io.to('game').emit('loadLevel', levelNumber);
     });
   });
 
