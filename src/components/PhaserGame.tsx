@@ -263,9 +263,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
               if (rand1 < density * 0.4) {
                  this.obstacles.create(baseX, 408, 'spike');
               } else if (rand1 < density * 1.5) {
-                 const en = this.enemies.create(baseX, 408, 'enemy');
+                 const en = this.enemies.create(baseX, 408, 'enemy') as Phaser.Physics.Arcade.Sprite;
                  (en.body as Phaser.Physics.Arcade.Body).allowGravity = true;
-                 en.setVelocityX(rng.next() > 0.5 ? 60 : -60);
+                 const dir = rng.next() > 0.5 ? 60 : -60;
+                 en.setVelocityX(dir);
+                 en.setData('dir', dir);
                  (en.body as Phaser.Physics.Arcade.Body).setBounceX(1);
               }
               
@@ -361,7 +363,12 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
           if (this.gameWon) { this.uiText.setText('LEVEL CLEARED! LOADING NEXT...'); return; }
 
           this.enemies.getChildren().forEach((e: any) => {
-             if (e.body.velocity.x === 0) e.setVelocityX(Math.random() > 0.5 ? 60 : -60);
+             if (e.body && e.body.velocity.x === 0) {
+                 const curDir = e.getData('dir') || 60;
+                 const newDir = curDir > 0 ? -60 : 60;
+                 e.setVelocityX(newDir);
+                 e.setData('dir', newDir);
+             }
           });
 
           const isLeft = this.cursors.left.isDown || this.keyA.isDown || this.joyKeys.left;
