@@ -15,6 +15,8 @@ let state = {
   p1: { x: 150, y: 360, anim: 'run1', flipX: false, connected: false },
   p2: { x: 80, y: 360, anim: 'run1', flipX: false, connected: false },
 };
+let currentLevel = 1;
+let finishedPlayers = new Set(); // tracks who touched the flag this level
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
@@ -47,10 +49,17 @@ app.prepare().then(() => {
       }
     });
 
-    socket.on('nextLevel', (levelNumber) => {
-        state.p1.x = 150; state.p1.y = 360;
-        state.p2.x = 80; state.p2.y = 360;
-        io.to('game').emit('loadLevel', levelNumber);
+    socket.on('flagTouched', (role) => {
+      if (finishedPlayers.has(role)) return; // ignore duplicates
+      finishedPlayers.add(role);
+      io.to('game').emit('playerFinished', role); // tell everyone who crossed
+
+      if (finishedPlayers.has('p1') && finishedPlayers.has('p2')) {
+        // Both players finished — start the countdown
+        currentLevel++;
+        finishedPlayers.clear();
+        io.to('game').emit('startCountdown', currentLevel);
+      }
     });
   });
 
