@@ -47,6 +47,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             bgmInterval!: number;
 
             joyKeys = joyKeysRef.current;
+            prevJump = false;
 
             hearts = 3;
             gameOver = false;
@@ -64,7 +65,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
             drawPlayer(key: string, shirtCol: number, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
                const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
-               const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 5; // bigger sprite
+               const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2; // extra small pixel size
 
                if (frameType === 'crouch') {
                   g.fillStyle(hat); g.fillRect(3 * p, 6 * p, 6 * p, 2 * p); g.fillStyle(skin); g.fillRect(3 * p, 8 * p, 6 * p, 3 * p);
@@ -172,7 +173,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                this.cameras.main.startFollow(this.cameraCenter, false, 0.1, 0.1);
                this.cameras.main.setBounds(0, 0, 10000, 480);
 
-               this.add.rectangle(5000, 240, 10000, 480, 0x5dade2); // Sky
+               this.add.rectangle(5000, 240, 10000, 480, 0x5dade2).setDepth(-10); // Sky
 
                this.createTextures();
 
@@ -191,7 +192,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   const cx = Phaser.Math.Between(0, 9800);
                   const cy = Phaser.Math.Between(40, 200);
                   const sc = Phaser.Math.FloatBetween(0.6, 1.4);
-                  const cloud = this.add.image(cx, cy, 'cloud').setScrollFactor(0.2).setScale(sc).setDepth(-1).setAlpha(Phaser.Math.FloatBetween(0.7, 1));
+                  const cloud = this.add.image(cx, cy, 'cloud').setScrollFactor(0.2).setScale(sc).setDepth(-5).setAlpha(Phaser.Math.FloatBetween(0.7, 1));
                   cloud.setData('speed', cloudSpeeds[ci % cloudSpeeds.length]);
                   cloud.setData('baseX', cx);
                   this.clouds.add(cloud);
@@ -199,9 +200,9 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                this.p1 = this.physics.add.sprite(150, 360, 'p1_run1');
                this.p2 = this.physics.add.sprite(80, 360, 'p2_run1');
-               // Body size scaled to match p=5 sprite (65×85 px)
-               this.p1.setBodySize(34, 60); this.p1.setOffset(13, 25);
-               this.p2.setBodySize(34, 60); this.p2.setOffset(13, 25);
+               // Body size scaled +4 to match p=2 sprite (26x34 px)
+               this.p1.setBodySize(18, 28); this.p1.setOffset(4, 6);
+               this.p2.setBodySize(18, 28); this.p2.setOffset(4, 6);
                this.p1.setCollideWorldBounds(true); this.p2.setCollideWorldBounds(true);
 
                this.physics.add.collider(this.p1, this.blocks); this.physics.add.collider(this.p2, this.blocks);
@@ -252,11 +253,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                      this.otherPlayer.setScale(st[opRole].scale || 1);
 
                      if (st[opRole].anim === 'crouch') {
-                        this.otherPlayer.setBodySize(20, 18);
-                        this.otherPlayer.setOffset(8, 33);
+                        this.otherPlayer.setBodySize(18, 16);
+                        this.otherPlayer.setOffset(4, 18);
                      } else {
-                        this.otherPlayer.setBodySize(20, 36);
-                        this.otherPlayer.setOffset(8, 15);
+                        this.otherPlayer.setBodySize(18, 28);
+                        this.otherPlayer.setOffset(4, 6);
                      }
 
                      if (st[opRole].anim === 'run') {
@@ -294,18 +295,20 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                         setTimeout(() => this.playAudio(880, 'square', 0.1), 100);
                         setTimeout(() => this.playAudio(988, 'square', 0.1), 200);
                         setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
-                        this.tweens.add({ targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
-                           this.countdownText.setAlpha(0);
-                           this.countingDown = false;
-                           this.waitingForOther = false;
-                           this.finishedSet.clear();
-                           this.level = nextLvl;
-                           this.gameWon = false;
-                           this.generateLevel(this.level);
-                           // respawn players at start
-                           this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0);
-                           this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
-                        }});
+                        this.tweens.add({
+                           targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
+                              this.countdownText.setAlpha(0);
+                              this.countingDown = false;
+                              this.waitingForOther = false;
+                              this.finishedSet.clear();
+                              this.level = nextLvl;
+                              this.gameWon = false;
+                              this.generateLevel(this.level);
+                              // respawn players at start
+                              this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0);
+                              this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+                           }
+                        });
                         return;
                      }
                      // Play adventurous ascending note + drum hit
@@ -450,7 +453,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                   this.hearts++;
                   this.isBig = true;
-                  player.setScale(1.3);
+                  player.setScale(1.4); // make them noticeably bigger when getting the mushroom
                }
             }
 
@@ -514,17 +517,22 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   const originX = p.getData('originX');
                   const range = p.getData('range');
                   let speed = p.getData('speed');
-                  if (Math.abs(p.x - originX) > range) {
-                     speed = -speed;
+
+                  if (p.x < originX - range && speed < 0) {
+                     speed = Math.abs(speed);
+                     p.setData('speed', speed);
+                  } else if (p.x > originX + range && speed > 0) {
+                     speed = -Math.abs(speed);
                      p.setData('speed', speed);
                   }
+
                   (p.body as Phaser.Physics.Arcade.Body).setVelocityX(speed);
                });
 
                // Animate clouds (drift slowly, loop back)
                this.clouds.getChildren().forEach((c: any) => {
-                  c.x -= c.getData('speed') * 0.005;
-                  if (c.x < -100) c.x = 1000;
+                  c.x -= c.getData('speed') * 0.02; // increased drift speed
+                  if (c.x < -200) c.x = 10000; // Fixed typo: loop to end of level, not x=1000
                });
 
                this.enemies.getChildren().forEach((e: any) => {
@@ -538,7 +546,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                const isLeft = this.cursors.left.isDown || this.keyA.isDown || this.joyKeys.left;
                const isRight = this.cursors.right.isDown || this.keyD.isDown || this.joyKeys.right;
-               const isJump = Phaser.Input.Keyboard.JustDown(this.cursors.up) || Phaser.Input.Keyboard.JustDown(this.keyW) || Phaser.Input.Keyboard.JustDown(this.cursors.space) || this.joyKeys.jump;
+
+               const isJumpHeld = this.cursors.up.isDown || this.keyW.isDown || this.cursors.space.isDown || this.joyKeys.jump;
+               const isJumpJustDown = isJumpHeld && !this.prevJump;
+               this.prevJump = isJumpHeld;
+
                const isCrouch = this.cursors.down.isDown || this.keyS.isDown || this.joyKeys.down;
                const onGround = this.myPlayer.body.touching.down;
 
@@ -546,11 +558,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                if (isCrouch && onGround) {
                   this.myPlayer.setVelocityX(0);
-                  this.myPlayer.setBodySize(34, 30); this.myPlayer.setOffset(13, 55);
+                  this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18);
                   animState = 'crouch';
                   this.myPlayer.anims.stop();
                } else {
-                  this.myPlayer.setBodySize(34, 60); this.myPlayer.setOffset(13, 25);
+                  this.myPlayer.setBodySize(18, 28); this.myPlayer.setOffset(4, 6);
 
                   if (isLeft) {
                      this.myPlayer.setVelocityX(-250);
@@ -566,10 +578,14 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                      this.myPlayer.anims.stop();
                   }
 
-                  if (isJump && onGround) {
-                     this.myPlayer.setVelocityY(-650);
+                  if (isJumpJustDown && onGround) {
+                     this.myPlayer.setVelocityY(-750);
                      this.playAudio(400, 'sine', 0.1);
-                     this.joyKeys.jump = false;
+                  }
+
+                  // Short hop logic: rapidly slow down upward momentum if jump is released early
+                  if (!isJumpHeld && this.myPlayer.body.velocity.y < -200) {
+                     this.myPlayer.setVelocityY(this.myPlayer.body.velocity.y * 0.8);
                   }
 
                   if (!onGround) {
@@ -673,7 +689,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             display: 'grid',
             gridTemplateColumns: 'repeat(3, 70px)',
             gridTemplateRows: 'repeat(2, 70px)',
-            gap: 10,
+            gap: 0,
             zIndex: 10,
          }}>
             <div />
