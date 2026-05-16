@@ -17,6 +17,7 @@ let state = {
 };
 let currentLevel = 1;
 let finishedPlayers = new Set(); // tracks who touched the flag this level
+let levelTransitionTime = 0; // timestamp of last level transition
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
@@ -50,6 +51,8 @@ app.prepare().then(() => {
     });
 
     socket.on('flagTouched', (role) => {
+      // Ignore stale events that arrive shortly after a level transition
+      if (Date.now() - levelTransitionTime < 2000) return;
       if (finishedPlayers.has(role)) return; // ignore duplicates
       finishedPlayers.add(role);
       io.to('game').emit('playerFinished', role); // tell everyone who crossed
@@ -58,6 +61,7 @@ app.prepare().then(() => {
         // Both players finished — start the countdown
         currentLevel++;
         finishedPlayers.clear();
+        levelTransitionTime = Date.now();
         // Reset player positions for the next level
         state.p1 = { ...state.p1, x: 150, y: 360 };
         state.p2 = { ...state.p2, x: 80, y: 360 };
@@ -71,6 +75,7 @@ app.prepare().then(() => {
       // Reset server state for next game
       currentLevel = 1;
       finishedPlayers.clear();
+      levelTransitionTime = 0;
       state.p1 = { x: 150, y: 360, anim: 'run1', flipX: false, connected: false };
       state.p2 = { x: 80, y: 360, anim: 'run1', flipX: false, connected: false };
     });
