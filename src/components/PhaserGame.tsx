@@ -11,6 +11,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
    useEffect(() => {
       if (typeof window === 'undefined') return;
 
+      // Prevent all text selection and context menus on touch
+      const preventSelect = (e: Event) => e.preventDefault();
+      document.addEventListener('selectstart', preventSelect);
+      document.addEventListener('contextmenu', preventSelect);
+
       let isDestroyed = false;
       let game: any;
       const socket: Socket = io();
@@ -59,6 +64,9 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             level = 1;
             isBig = false;
             coinCount = 0;
+            score = 0;
+            levelTimer = 120; // 2 minutes in seconds
+            timerEvent!: Phaser.Time.TimerEvent;
             countdownText!: Phaser.GameObjects.Text;
             finishedSet: Set<string> = new Set();
 
@@ -438,6 +446,14 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                gMushPlat.fillStyle(0x3cb03c, 1); gMushPlat.fillRect(10, 0, 108, 3);
                gMushPlat.generateTexture('mush_platform', 128, 20); gMushPlat.destroy();
 
+               // Green block for level 4 pillar tops
+               const gGreenBlock = this.make.graphics({ x: 0, y: 0 }, false);
+               gGreenBlock.fillStyle(0x22a022, 1); gGreenBlock.fillRect(0, 0, 32, 32);
+               gGreenBlock.fillStyle(0x32cd32, 1); gGreenBlock.fillRect(1, 1, 14, 14); gGreenBlock.fillRect(17, 17, 14, 14);
+               gGreenBlock.fillStyle(0x145214, 1); gGreenBlock.fillRect(0, 15, 32, 2); gGreenBlock.fillRect(15, 0, 2, 32);
+               gGreenBlock.fillStyle(0x3cb03c, 1); gGreenBlock.fillRect(0, 0, 32, 4);
+               gGreenBlock.generateTexture('green_block', 32, 32); gGreenBlock.destroy();
+
                const gMushStem = this.make.graphics({ x: 0, y: 0 }, false);
                gMushStem.fillStyle(0x196419, 1); gMushStem.fillRect(0, 0, 20, 64);
                gMushStem.fillStyle(0x22a022, 1); gMushStem.fillRect(4, 0, 8, 64);
@@ -465,22 +481,67 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                gLava.generateTexture('lava', 64, 32); gLava.destroy();
 
                const gBowser = this.make.graphics({ x: 0, y: 0 }, false);
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(32, 36, 48, 40);
-               gBowser.fillStyle(0x32cd32, 1); gBowser.fillEllipse(28, 30, 30, 24);
-               gBowser.fillStyle(0xfff44f, 1); gBowser.fillEllipse(32, 16, 28, 24);
-               gBowser.fillStyle(0xffffff, 1); gBowser.fillCircle(24, 12, 5); gBowser.fillCircle(40, 12, 5);
-               gBowser.fillStyle(0xff0000, 1); gBowser.fillCircle(24, 12, 3); gBowser.fillCircle(40, 12, 3);
-               gBowser.fillStyle(0x8b4513, 1); gBowser.fillEllipse(32, 40, 40, 30);
-               gBowser.fillStyle(0xa0522d, 1); gBowser.fillRect(16, 32, 8, 4); gBowser.fillRect(28, 28, 8, 4); gBowser.fillRect(40, 32, 8, 4);
-               gBowser.fillStyle(0xff4500, 1); gBowser.fillRect(20, 4, 4, 8); gBowser.fillRect(28, 2, 4, 8); gBowser.fillRect(36, 4, 4, 8); gBowser.fillRect(44, 6, 4, 6);
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(16, 52, 14, 10); gBowser.fillEllipse(48, 52, 14, 10);
-               gBowser.generateTexture('bowser', 64, 60); gBowser.destroy();
+               // Classic NES Bowser - green spiky shell, tan belly, horns
+               // Legs
+               gBowser.fillStyle(0x228b22, 1); gBowser.fillRect(8, 52, 12, 12); gBowser.fillRect(40, 52, 12, 12);
+               // Feet/claws
+               gBowser.fillStyle(0xd2691e, 1); gBowser.fillRect(4, 60, 8, 6); gBowser.fillRect(16, 60, 6, 6); gBowser.fillRect(38, 60, 6, 6); gBowser.fillRect(48, 60, 8, 6);
+               // Body
+               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(32, 42, 44, 30);
+               // Shell (back)
+               gBowser.fillStyle(0x145214, 1); gBowser.fillEllipse(36, 38, 36, 26);
+               // Shell spikes
+               gBowser.fillStyle(0xffffff, 1);
+               gBowser.fillTriangle(24, 26, 28, 18, 32, 26);
+               gBowser.fillTriangle(32, 24, 36, 16, 40, 24);
+               gBowser.fillTriangle(40, 26, 44, 18, 48, 26);
+               // Belly
+               gBowser.fillStyle(0xd2a060, 1); gBowser.fillEllipse(24, 46, 20, 18);
+               // Belly lines
+               gBowser.fillStyle(0xb8863c, 1); gBowser.fillRect(16, 42, 16, 2); gBowser.fillRect(16, 46, 16, 2); gBowser.fillRect(16, 50, 16, 2);
+               // Arms
+               gBowser.fillStyle(0x228b22, 1); gBowser.fillRect(4, 38, 10, 8); gBowser.fillRect(46, 36, 10, 8);
+               // Claws on arms
+               gBowser.fillStyle(0xd2691e, 1); gBowser.fillRect(2, 42, 6, 4); gBowser.fillRect(52, 40, 6, 4);
+               // Head
+               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(20, 24, 24, 22);
+               // Snout/face
+               gBowser.fillStyle(0x32cd32, 1); gBowser.fillEllipse(14, 26, 14, 12);
+               // Eyes
+               gBowser.fillStyle(0xffffff, 1); gBowser.fillCircle(16, 20, 4); gBowser.fillCircle(26, 18, 4);
+               gBowser.fillStyle(0x000000, 1); gBowser.fillCircle(15, 20, 2); gBowser.fillCircle(25, 18, 2);
+               // Eyebrows (angry)
+               gBowser.fillStyle(0xff4500, 1); gBowser.fillRect(12, 16, 8, 2); gBowser.fillRect(22, 14, 8, 2);
+               // Mouth
+               gBowser.fillStyle(0x000000, 1); gBowser.fillRect(8, 28, 12, 3);
+               gBowser.fillStyle(0xffffff, 1); gBowser.fillRect(9, 28, 2, 3); gBowser.fillRect(13, 28, 2, 3); gBowser.fillRect(17, 28, 2, 3);
+               // Horns
+               gBowser.fillStyle(0xd2691e, 1);
+               gBowser.fillTriangle(12, 14, 8, 4, 16, 12);
+               gBowser.fillTriangle(26, 12, 28, 2, 32, 10);
+               // Hair/mane (red)
+               gBowser.fillStyle(0xff4500, 1); gBowser.fillRect(6, 10, 4, 6); gBowser.fillRect(10, 8, 4, 6); gBowser.fillRect(14, 6, 4, 8);
+               gBowser.generateTexture('bowser', 64, 66); gBowser.destroy();
 
                const gFireBreath = this.make.graphics({ x: 0, y: 0 }, false);
                gFireBreath.fillStyle(0xff4400, 1); gFireBreath.fillEllipse(16, 10, 32, 16);
                gFireBreath.fillStyle(0xff8800, 1); gFireBreath.fillEllipse(12, 10, 20, 10);
                gFireBreath.fillStyle(0xffcc00, 1); gFireBreath.fillEllipse(8, 10, 10, 6);
                gFireBreath.generateTexture('fire_breath', 32, 20); gFireBreath.destroy();
+
+               // Fire bar ball (single fireball in the chain)
+               const gFBall = this.make.graphics({ x: 0, y: 0 }, false);
+               gFBall.fillStyle(0xff6600, 1); gFBall.fillCircle(8, 8, 8);
+               gFBall.fillStyle(0xff9900, 1); gFBall.fillCircle(7, 6, 5);
+               gFBall.fillStyle(0xffcc00, 1); gFBall.fillCircle(6, 5, 3);
+               gFBall.generateTexture('firebar_ball', 16, 16); gFBall.destroy();
+
+               // Fire bar center block
+               const gFCenter = this.make.graphics({ x: 0, y: 0 }, false);
+               gFCenter.fillStyle(0xcc6600, 1); gFCenter.fillRect(0, 0, 20, 20);
+               gFCenter.fillStyle(0xff8800, 1); gFCenter.fillRect(2, 2, 16, 16);
+               gFCenter.fillStyle(0xffaa00, 1); gFCenter.fillCircle(10, 10, 5);
+               gFCenter.generateTexture('firebar_center', 20, 20); gFCenter.destroy();
 
                const gM = this.make.graphics({ x: 0, y: 0 }, false);
                gM.fillStyle(0xffdab9, 1); gM.fillRect(6, 16, 12, 10); gM.fillStyle(0xeec090, 1); gM.fillRect(6, 22, 12, 4);
@@ -528,6 +589,49 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                this.drawPlayer('p1_run1', 0xd50000, 'run1'); this.drawPlayer('p1_run2', 0xd50000, 'run2'); this.drawPlayer('p1_jump', 0xd50000, 'jump'); this.drawPlayer('p1_crouch', 0xd50000, 'crouch');
                this.drawPrincess('p2_run1', 'run1'); this.drawPrincess('p2_run2', 'run2'); this.drawPrincess('p2_jump', 'jump'); this.drawPrincess('p2_crouch', 'crouch');
+
+               // Death frames (X pose - arms up, legs spread)
+               const drawDeath = (key: string, shirtCol: number) => {
+                  const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
+                  const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
+                  // Hat
+                  g.fillStyle(hat); g.fillRect(4 * p, 0, 5 * p, 2 * p); g.fillRect(3 * p, 2 * p, 7 * p, 1 * p);
+                  // Face
+                  g.fillStyle(skin); g.fillRect(4 * p, 3 * p, 5 * p, 4 * p);
+                  g.fillStyle(0x000000); g.fillRect(5 * p, 4 * p, 1 * p, 1 * p); g.fillRect(7 * p, 4 * p, 1 * p, 1 * p);
+                  // Open mouth (surprised)
+                  g.fillStyle(0x000000); g.fillRect(5 * p, 6 * p, 3 * p, 1 * p);
+                  // Body
+                  g.fillStyle(shirtCol); g.fillRect(4 * p, 7 * p, 5 * p, 3 * p);
+                  g.fillStyle(overalls); g.fillRect(4 * p, 10 * p, 5 * p, 3 * p);
+                  // Arms up and out (X shape)
+                  g.fillStyle(shirtCol); g.fillRect(1 * p, 3 * p, 3 * p, 2 * p); g.fillRect(9 * p, 3 * p, 3 * p, 2 * p);
+                  g.fillStyle(skin); g.fillRect(0, 2 * p, 2 * p, 2 * p); g.fillRect(11 * p, 2 * p, 2 * p, 2 * p);
+                  // Legs spread out (X shape)
+                  g.fillStyle(overalls); g.fillRect(2 * p, 13 * p, 2 * p, 3 * p); g.fillRect(9 * p, 13 * p, 2 * p, 3 * p);
+                  g.fillStyle(shoes); g.fillRect(1 * p, 16 * p, 2 * p, 1 * p); g.fillRect(10 * p, 16 * p, 2 * p, 1 * p);
+                  g.generateTexture(key, 13 * p, 17 * p); g.destroy();
+               };
+               drawDeath('p1_death', 0xd50000);
+               // Princess death
+               const drawPDeath = () => {
+                  const skin = 0xffdab9; const dress = 0xffb6c1; const crown = 0xffd700; const shoes = 0xe52458;
+                  const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
+                  g.fillStyle(crown); g.fillRect(5 * p, 0, 3 * p, 1 * p); g.fillRect(4 * p, 1 * p, 5 * p, 1 * p);
+                  g.fillStyle(skin); g.fillRect(4 * p, 2 * p, 5 * p, 4 * p);
+                  g.fillStyle(0x000000); g.fillRect(5 * p, 3 * p, 1 * p, 1 * p); g.fillRect(7 * p, 3 * p, 1 * p, 1 * p);
+                  g.fillStyle(0x000000); g.fillRect(5 * p, 5 * p, 3 * p, 1 * p);
+                  g.fillStyle(dress); g.fillRect(4 * p, 6 * p, 5 * p, 4 * p);
+                  g.fillStyle(dress); g.fillRect(4 * p, 10 * p, 5 * p, 3 * p);
+                  // Arms up (X)
+                  g.fillStyle(dress); g.fillRect(1 * p, 3 * p, 3 * p, 2 * p); g.fillRect(9 * p, 3 * p, 3 * p, 2 * p);
+                  g.fillStyle(skin); g.fillRect(0, 2 * p, 2 * p, 2 * p); g.fillRect(11 * p, 2 * p, 2 * p, 2 * p);
+                  // Legs spread (X)
+                  g.fillStyle(dress); g.fillRect(2 * p, 13 * p, 2 * p, 2 * p); g.fillRect(9 * p, 13 * p, 2 * p, 2 * p);
+                  g.fillStyle(shoes); g.fillRect(1 * p, 15 * p, 2 * p, 1 * p); g.fillRect(10 * p, 15 * p, 2 * p, 1 * p);
+                  g.generateTexture('p2_death', 13 * p, 17 * p); g.destroy();
+               };
+               drawPDeath();
                this.anims.create({ key: 'p1_run', frames: [{ key: 'p1_run1' }, { key: 'p1_run2' }], frameRate: 10, repeat: -1 });
                this.anims.create({ key: 'p2_run', frames: [{ key: 'p2_run1' }, { key: 'p2_run2' }], frameRate: 10, repeat: -1 });
             }
@@ -584,8 +688,8 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                this.physics.add.overlap(this.p2, this.enemies, this.hitEnemy as any, undefined, this);
                this.physics.add.overlap(this.p1, this.fireballs, () => this.takeDamage(this.p1), undefined, this);
                this.physics.add.overlap(this.p2, this.fireballs, () => this.takeDamage(this.p2), undefined, this);
-               this.physics.add.overlap(this.p1, this.obstacles, () => this.takeDamage(this.p1), undefined, this);
-               this.physics.add.overlap(this.p2, this.obstacles, () => this.takeDamage(this.p2), undefined, this);
+               this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
+               this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
                this.physics.add.overlap(this.p1, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p2, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p1, this.coins, this.collectCoin as any, undefined, this);
@@ -599,7 +703,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                this.keyS = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S);
                this.keyD = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D);
 
-               this.uiText = this.add.text(20, 20, '', { fontSize: '24px', color: '#fff', stroke: '#000', strokeThickness: 4 }).setScrollFactor(0);
+               this.uiText = this.add.text(20, 20, '', { fontSize: '24px', color: '#fff', stroke: '#000', strokeThickness: 4 }).setScrollFactor(0).setDepth(999);
                this.countdownText = this.add.text(400, 200, '', { fontSize: '80px', color: '#ffe600', stroke: '#000', strokeThickness: 8, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(20).setAlpha(0);
 
                socket.emit('join', role);
@@ -694,9 +798,37 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   [2976, 3040, 3104, 3168].forEach((bx, i) => { if (i % 2 === 0) this.blocks.create(bx, GY - 5 * B, 'block'); else { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); } });
                   addMovPlat(2600, 340, 60); addMovPlat(4400, 300, -60);
                   [900, 1500, 2150, 3700, 4600, 5300].forEach(ex => addGoomba(ex));
+
+                  // Wall puzzles - walls you have to jump over
+                  for (let row = 0; row < 3; row++) this.blocks.create(3400, GY - row * B, 'block');
+                  for (let row = 0; row < 4; row++) this.blocks.create(4900, GY - row * B, 'block');
+                  for (let row = 0; row < 2; row++) this.blocks.create(5600, GY - row * B, 'block');
+
+                  // Hammer Brothers
+                  const addHammerBro = (hx: number, hy: number) => {
+                     const hb = this.enemies.create(hx, hy, 'hammer_bro') as Phaser.Physics.Arcade.Sprite;
+                     (hb.body as any).allowGravity = true;
+                     hb.setVelocityX(40); hb.setData('dir', 40); (hb.body as any).setBounceX(1);
+                     this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
+                        if (!hb.active || this.gameOver) return;
+                        hb.setVelocityY(-350);
+                     }});
+                     this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
+                        if (!hb.active || this.gameOver || this.gameWon) return;
+                        const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
+                        (hammer.body as any).allowGravity = true;
+                        hammer.setVelocityX(hb.flipX ? 120 : -120);
+                        hammer.setVelocityY(-300);
+                        this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
+                        this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
+                     }});
+                  };
+                  addHammerBro(3500, GY - B * 2); addHammerBro(5100, GY - B * 2);
                   // Coins
-                  [[400, GY - 3 * B], [464, GY - 3 * B], [528, GY - 3 * B], [1000, GY - 6 * B], [1064, GY - 6 * B], [1700, GY - 3 * B], [1764, GY - 3 * B], [2500, GY - 4 * B], [2564, GY - 4 * B], [2628, GY - 4 * B], [3500, GY - 3 * B], [3564, GY - 3 * B], [4200, GY - 4 * B], [4264, GY - 4 * B], [5000, GY - 3 * B], [5064, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
-                  buildStairs(6464); this.flags.create(6960, GY - 192, 'flag'); buildCastle(7400);
+                  [[400, GY - 3 * B], [464, GY - 3 * B], [528, GY - 3 * B], [1000, GY - 6 * B], [1064, GY - 6 * B], [1700, GY - 3 * B], [1764, GY - 3 * B], [2500, GY - 4 * B], [2564, GY - 4 * B], [2628, GY - 4 * B], [3500, GY - 3 * B], [3564, GY - 3 * B], [4200, GY - 4 * B], [4264, GY - 4 * B], [5000, GY - 3 * B], [5064, GY - 3 * B], [5500, GY - 3 * B], [5564, GY - 3 * B], [5628, GY - 3 * B], [6000, GY - 4 * B], [6064, GY - 4 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
+                  // Coin cluster (4 rows x 8 coins)
+                  for (let row = 0; row < 4; row++) { for (let col = 0; col < 8; col++) { const cx = 4400 + col * 28; const cy = GY - (3 + row) * B; const coin = this.coins.create(cx, cy, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: cy - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: col * 50 }); } }
+                  buildStairs(6464); this.flags.create(6960, GY - 80, 'flag'); buildCastle(7400);
                } else if (lvl === 2) {
                   this.add.rectangle(5000, 240, 10000, 480, 0x000018).setDepth(-10).setData('decoration', true);
                   for (let x = 0; x < 8500; x += B) { this.blocks.create(x + B / 2, 16, 'block'); this.blocks.create(x + B / 2, 48, 'block'); }
@@ -707,8 +839,10 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   addMovPlat(2900, 310, 70, 100); addMovPlat(4900, 330, -70, 100);
                   [650, 1150, 1950, 3100, 3750, 4300, 5200, 5850].forEach((ex, i) => i % 2 === 0 ? addGoomba(ex) : addKoopa(ex));
                   // Coins
-                  [[500, GY - 4 * B], [564, GY - 4 * B], [1000, GY - 6 * B], [1064, GY - 6 * B], [1128, GY - 6 * B], [1800, GY - 5 * B], [1864, GY - 5 * B], [2800, GY - 3 * B], [2864, GY - 3 * B], [3500, GY - 5 * B], [3564, GY - 5 * B], [3628, GY - 5 * B], [4500, GY - 4 * B], [4564, GY - 4 * B], [5500, GY - 3 * B], [5564, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
-                  buildStairs(6464, 'castle_wall'); this.flags.create(6960, GY - 192, 'flag'); buildCastle(7400);
+                  [[500, GY - 4 * B], [564, GY - 4 * B], [1000, GY - 6 * B], [1064, GY - 6 * B], [1128, GY - 6 * B], [1800, GY - 5 * B], [1864, GY - 5 * B], [2800, GY - 3 * B], [2864, GY - 3 * B], [3500, GY - 5 * B], [3564, GY - 5 * B], [3628, GY - 5 * B], [4500, GY - 4 * B], [4564, GY - 4 * B], [5500, GY - 3 * B], [5564, GY - 3 * B], [5800, GY - 4 * B], [5864, GY - 4 * B], [6100, GY - 3 * B], [6164, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
+                  // Coin cluster (3 rows x 10 coins)
+                  for (let row = 0; row < 3; row++) { for (let col = 0; col < 10; col++) { const cx = 3800 + col * 28; const cy = GY - (3 + row) * B; const coin = this.coins.create(cx, cy, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: cy - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: col * 50 }); } }
+                  buildStairs(6464, 'castle_wall'); this.flags.create(6960, GY - 80, 'flag'); buildCastle(7400);
                } else if (lvl === 3) {
                   // Mario Forever World 3 style - Purple Night Theme
                   // Gradient sky background
@@ -818,62 +952,89 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   [[700, GY - 6 * B], [764, GY - 6 * B], [2350, GY - 6 * B], [2414, GY - 6 * B], [4050, GY - 7 * B], [4114, GY - 7 * B], [1150, GY - 3 * B], [1214, GY - 3 * B], [1278, GY - 3 * B], [3650, GY - 4 * B], [3714, GY - 4 * B], [5650, GY - 5 * B], [5714, GY - 5 * B], [5778, GY - 5 * B], [6750, GY - 3 * B], [6814, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
 
                   // End section: stairs and flag
-                  buildStairs(6700, 'purple_block'); this.flags.create(7200, GY - 192, 'flag'); buildCastle(7600);
+                  buildStairs(6700, 'purple_block'); this.flags.create(7200, GY - 80, 'flag'); buildCastle(7600);
                } else if (lvl === 4) {
-                  // Level 4 - Sky Platform Hopping (no ground, small floating platforms)
-                  this.add.rectangle(5000, 240, 10000, 480, 0x87ceeb).setDepth(-10).setData('decoration', true);
-                  // No ground - just open sky. Falling off = death at world bounds
+                  // Level 4 - Pillar Platforming (tall columns with green tops, gaps between)
+                  this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
+                  // Clouds in background
+                  [[200, 80], [600, 120], [1100, 60], [1800, 100], [2400, 70], [3100, 110], [3800, 60], [4500, 90], [5200, 70], [5900, 100]].forEach(([cx, cy]) => this.add.image(cx as number, cy as number, 'cloud').setScale(0.8).setDepth(-3).setData('decoration', true));
 
-                  // Starting large platform
-                  for (let x = 0; x < 6; x++) this.blocks.create(80 + x * B, 390, 'block');
-
-                  // Green leaf platforms on stems (flat on top, rounded ends, stem going down to bottom)
-                  const addMushPlatform = (mx: number, my: number) => {
-                     this.blocks.create(mx, my, 'mush_platform');
-                     // Stem extends from platform all the way down to bottom of screen
-                     const stemStart = my + 14;
-                     const stemEnd = 500; // past bottom of screen
-                     for (let sy = stemStart; sy < stemEnd; sy += 20) this.add.image(mx, sy, 'mush_stem').setDepth(-1).setData('decoration', true);
+                  // Helper: build a pillar (green flat top with rounded left/right edges + orange column)
+                  const addPillar = (px: number, topY: number, width: number) => {
+                     // Walkable blocks - main width plus small extensions for rounded edges
+                     for (let i = 0; i < width; i++) { const b = this.blocks.create(px + i * B, topY, 'green_block') as Phaser.Physics.Arcade.Sprite; b.setAlpha(0); }
+                     // Small extra blocks on left and right edges (half-width) for the curved parts
+                     const bL = this.blocks.create(px - B / 2, topY, 'green_block') as Phaser.Physics.Arcade.Sprite; bL.setAlpha(0); bL.setSize(16, 32);
+                     const bR = this.blocks.create(px + (width - 1) * B + B / 2, topY, 'green_block') as Phaser.Physics.Arcade.Sprite; bR.setAlpha(0); bR.setSize(16, 32);
+                     // Visual: flat green top with rounded ends
+                     const centerX = px + (width - 1) * B / 2;
+                     const topWidth = width * B + 12;
+                     // Main green bar
+                     this.add.rectangle(centerX, topY, topWidth, 20, 0x32cd32).setDepth(3).setData('decoration', true);
+                     // Rounded left end
+                     this.add.circle(px - B / 2 - 4, topY, 10, 0x32cd32).setDepth(3).setData('decoration', true);
+                     // Rounded right end
+                     this.add.circle(px + (width - 1) * B + B / 2 + 4, topY, 10, 0x32cd32).setDepth(3).setData('decoration', true);
+                     // Lighter top highlight
+                     this.add.rectangle(centerX, topY - 6, topWidth - 8, 6, 0x3cb03c).setDepth(4).setData('decoration', true);
+                     // Orange/brown column below - starts right below the green (no gap)
+                     for (let i = 0; i < width; i++) {
+                        for (let row = 0; row <= Math.ceil((500 - topY) / B); row++) {
+                           this.add.rectangle(px + i * B, topY + 10 + row * B, B, B, 0xc84c0c).setDepth(-1).setData('decoration', true);
+                        }
+                     }
                   };
 
-                  // Platform sequence - hop from platform to platform
-                  addMushPlatform(380, 300); addMushPlatform(560, 260);
-                  addMushPlatform(750, 310); addMushPlatform(950, 240);
-                  addMushPlatform(1150, 290); addMushPlatform(1380, 220);
-                  addMushPlatform(1600, 280); addMushPlatform(1820, 330);
-                  addMushPlatform(2050, 250); addMushPlatform(2280, 300);
-                  addMushPlatform(2500, 220); addMushPlatform(2720, 270);
-                  addMushPlatform(2950, 320); addMushPlatform(3180, 240);
-                  addMushPlatform(3420, 290); addMushPlatform(3660, 210);
-                  addMushPlatform(3900, 270); addMushPlatform(4140, 320);
-                  addMushPlatform(4380, 230); addMushPlatform(4620, 280);
-                  addMushPlatform(4860, 240); addMushPlatform(5100, 310);
-                  addMushPlatform(5340, 260); addMushPlatform(5580, 220);
-                  addMushPlatform(5820, 300);
+                  // Pillar sequence - varying heights and widths with gaps
+                  // First pillar is where players spawn - make it at y=390 so players at y=360 land on it
+                  addPillar(80, 390, 4);       // Starting pillar (low, wide) - spawn point
+                  addPillar(320, 340, 3);      // Medium height
+                  addPillar(530, 290, 2);      // Tall, narrow
+                  addPillar(720, 360, 3);      // Medium-low
+                  addPillar(960, 240, 3);      // Very tall
+                  addPillar(1200, 320, 2);     // Medium-tall
+                  addPillar(1420, 380, 3);     // Low
+                  addPillar(1650, 270, 2);     // Tall
+                  addPillar(1870, 340, 3);     // Medium
+                  addPillar(2120, 220, 2);     // Very tall
+                  addPillar(2340, 360, 3);     // Medium-low
+                  addPillar(2580, 290, 2);     // Tall
+                  addPillar(2800, 380, 3);     // Low
+                  addPillar(3040, 260, 2);     // Tall
+                  addPillar(3260, 330, 3);     // Medium
+                  addPillar(3500, 230, 2);     // Very tall
+                  addPillar(3720, 370, 3);     // Medium-low
+                  addPillar(3960, 300, 2);     // Tall
+                  addPillar(4180, 380, 3);     // Low
+                  addPillar(4420, 250, 2);     // Very tall
+                  addPillar(4640, 340, 3);     // Medium
+                  addPillar(4880, 280, 2);     // Tall
+                  addPillar(5100, 380, 3);     // Low
+                  addPillar(5340, 310, 2);     // Medium-tall
+                  addPillar(5560, 360, 3);     // Medium-low
 
-                  // Some ? blocks floating between platforms
-                  [700, 1250, 1900, 2600, 3300, 4000, 4700, 5450].forEach(bx => { const qb = this.qBlocks.create(bx, 220, 'qblock'); qb.setData('active', true); });
+                  // ? blocks above some pillars
+                  [400, 1000, 1700, 2400, 3100, 3800, 4500, 5200].forEach(bx => { const qb = this.qBlocks.create(bx, 160, 'qblock'); qb.setData('active', true); });
 
-                  // Moving platforms for tricky gaps
-                  addMovPlat(1000, 350, 50, 60); addMovPlat(2150, 300, -50, 70); addMovPlat(3550, 320, 60, 50); addMovPlat(4950, 290, -50, 60);
+                  // Enemies on top of pillars (spawn just above the pillar surface)
+                  [[320, 340], [720, 360], [1200, 320], [1870, 340], [2340, 360], [2800, 380], [3260, 330], [3720, 370], [4180, 380], [4640, 340], [5100, 380]].forEach(([ex, ey], i) => i % 3 === 0 ? addKoopa(ex as number, (ey as number) - B) : addGoomba(ex as number, (ey as number) - B));
 
-                  // Enemies on platforms
-                  [560, 1150, 1820, 2500, 3180, 3900, 4620, 5340].forEach((ex, i) => i % 2 === 0 ? addGoomba(ex, 240) : addKoopa(ex, 240));
-
-                  // Piranhas on some stems
-                  [750, 1600, 2720, 3660, 4860].forEach(px => {
-                     const pl = this.piranhas.create(px, 380, 'piranha') as Phaser.Physics.Arcade.Sprite;
-                     (pl.body as any).allowGravity = false; pl.setDepth(1);
-                     this.tweens.add({ targets: pl, y: 300, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 1000) });
+                  // Coins placed above each pillar (2 rows matching pillar width)
+                  const pillarData: [number, number, number][] = [[80,390,4],[320,340,3],[530,290,2],[720,360,3],[960,240,3],[1200,320,2],[1420,380,3],[1650,270,2],[1870,340,3],[2120,220,2],[2340,360,3],[2580,290,2],[2800,380,3],[3040,260,2],[3260,330,3],[3500,230,2],[3720,370,3],[3960,300,2],[4180,380,3],[4420,250,2],[4640,340,3],[4880,280,2],[5100,380,3],[5340,310,2],[5560,360,3]];
+                  pillarData.forEach(([px, topY, width]) => {
+                     for (let row = 0; row < 2; row++) {
+                        for (let i = 0; i < width; i++) {
+                           const cy = topY - (2 + row) * B;
+                           const coin = this.coins.create(px + i * B, cy, 'coin') as Phaser.Physics.Arcade.Sprite;
+                           (coin.body as any).allowGravity = false;
+                           this.tweens.add({ targets: coin, y: cy - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                        }
+                     }
                   });
 
-                  // Coins between platforms
-                  [[450, 300], [650, 260], [1050, 240], [1500, 280], [2150, 250], [2850, 320], [3550, 240], [4250, 280], [4750, 240], [5200, 260], [5700, 300], [5900, 260]].forEach(([cx, cy]) => { const coin = this.coins.create(cx, cy, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: cy - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
-
-                  // End platform and flag
-                  for (let x = 0; x < 8; x++) this.blocks.create(6100 + x * B, 380, 'block');
-                  this.flags.create(6400, 380 - 160, 'flag');
-                  buildCastle(6700);
+                  // End pillar with flag ON the surface
+                  addPillar(5800, 340, 5);
+                  this.flags.create(5900, 340 - 80, 'flag');
 
                } else {
                   // Level 5 - Lava/Boss Level (Bowser fight)
@@ -896,20 +1057,41 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                      this.tweens.add({ targets: bubble, y: GY - Phaser.Math.Between(30, 80), alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 600, onComplete: () => bubble.destroy() });
                   }});
 
-                  // Ground - lava blocks with gaps (lava pits)
-                  const lavaPits: [number, number][] = [[800, 800 + B * 3], [1600, 1600 + B * 3], [2400, 2400 + B * 4], [3200, 3200 + B * 3], [4000, 4000 + B * 3]];
-                  for (let x = 0; x < 5500; x += B) { if (!lavaPits.some(([s, e]) => x >= s && x < e)) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); } }
-                  // Lava in the pits (kills on touch)
-                  lavaPits.forEach(([s, e]) => { for (let x = s; x < e; x += B) { const lavaObs = this.obstacles.create(x + B / 2, GY + 8, 'lava') as Phaser.Physics.Arcade.Sprite; lavaObs.setSize(32, 16); } });
+                  // Ground - floor sections (~1000px each) with WIDE lava pits between them
+                  // Floor 1: x=0 to x=1000
+                  for (let x = 0; x < 1000; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
+                  // Lava pit 1: x=1000 to x=1600 (600px wide)
+                  for (let x = 1000; x < 1600; x += B) { const lavaObs = this.obstacles.create(x + B / 2, GY + 8, 'lava') as Phaser.Physics.Arcade.Sprite; lavaObs.setSize(32, 16); lavaObs.setData('isLava', true); }
+                  // Floor 2: x=1600 to x=2600
+                  for (let x = 1600; x < 2600; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
+                  // Lava pit 2: x=2600 to x=3300 (700px wide)
+                  for (let x = 2600; x < 3300; x += B) { const lavaObs = this.obstacles.create(x + B / 2, GY + 8, 'lava') as Phaser.Physics.Arcade.Sprite; lavaObs.setSize(32, 16); lavaObs.setData('isLava', true); }
+                  // Floor 3: x=3300 to x=4400 (leads to boss corridor)
+                  for (let x = 3300; x < 4400; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
 
-                  // Stone platforms above lava pits
-                  [[850, GY - 3 * B, 2], [1650, GY - 3 * B, 2], [2480, GY - 3 * B, 3], [3250, GY - 4 * B, 2], [4050, GY - 3 * B, 2]].forEach(([px, py, len]) => { for (let i = 0; i < (len as number); i++) this.blocks.create((px as number) + i * B, py as number, 'lava_block'); });
+                  // Stairs on edges of lava pits
+                  for (let step = 0; step < 3; step++) this.blocks.create(970 + step * B, GY - (step + 1) * B, 'lava_block');
+                  for (let step = 0; step < 3; step++) this.blocks.create(1600 + step * B, GY - (3 - step) * B, 'lava_block');
+                  for (let step = 0; step < 3; step++) this.blocks.create(2570 + step * B, GY - (step + 1) * B, 'lava_block');
+                  for (let step = 0; step < 3; step++) this.blocks.create(3300 + step * B, GY - (3 - step) * B, 'lava_block');
+
+                  // Small moving bridges over lava pits (player moves with them)
+                  addMovPlat(1300, GY - 2 * B, 50, 80);
+                  addMovPlat(2950, GY - 2 * B, -45, 100);
+
+                  // Wall puzzles - vertical walls you have to jump over
+                  for (let row = 0; row < 4; row++) this.blocks.create(500, GY - row * B, 'lava_block');
+                  for (let row = 0; row < 5; row++) this.blocks.create(2000, GY - row * B, 'lava_block');
+                  for (let row = 0; row < 3; row++) this.blocks.create(3600, GY - row * B, 'lava_block');
+                  // Overhead blocks (tight squeeze sections)
+                  for (let i = 0; i < 3; i++) this.blocks.create(1800 + i * B, GY - 3 * B, 'lava_block');
+                  for (let i = 0; i < 3; i++) this.blocks.create(3800 + i * B, GY - 3 * B, 'lava_block');
 
                   // Fireballs shooting up from lava pits
-                  lavaPits.forEach(([s]) => {
-                     this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                  [1200, 1400, 2800, 3100].forEach(s => {
+                     this.time.addEvent({ delay: 2200 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
                         if (this.gameOver || this.gameWon) return;
-                        const fb = this.fireballs.create(s + B * 1.5, GY + 10, 'fireball') as Phaser.Physics.Arcade.Sprite;
+                        const fb = this.fireballs.create(s, GY + 10, 'fireball') as Phaser.Physics.Arcade.Sprite;
                         (fb.body as any).allowGravity = false;
                         fb.setVelocityY(-350);
                         this.time.delayedCall(2000, () => { if (fb && fb.active) fb.destroy(); });
@@ -917,56 +1099,164 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   });
 
                   // Enemies
-                  [400, 1100, 1900, 2900, 3600].forEach((ex, i) => i % 2 === 0 ? addGoomba(ex) : addKoopa(ex));
+                  [300, 700, 1800, 2200, 3500, 4000].forEach((ex, i) => i % 2 === 0 ? addGoomba(ex) : addKoopa(ex));
+
+                  // Fire bars
+                  const addFireBar = (cx: number, cy: number, length: number, speed: number) => {
+                     this.add.image(cx, cy, 'firebar_center').setDepth(4).setData('decoration', true);
+                     for (let i = 1; i <= length; i++) {
+                        const ball = this.add.image(cx, cy - i * 16, 'firebar_ball').setDepth(4);
+                        ball.setData('centerX', cx); ball.setData('centerY', cy);
+                        ball.setData('radius', i * 16); ball.setData('speed', speed);
+                        ball.setData('angle', 0); ball.setData('firebar', true);
+                     }
+                  };
+                  addFireBar(500, GY - 4 * B, 4, 2.5);
+                  addFireBar(2000, GY - 5 * B, 4, -3);
+                  addFireBar(3600, GY - 3 * B, 3, 2);
 
                   // ? blocks
-                  [500, 1300, 2100, 3000, 3800].forEach(bx => { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); });
+                  [350, 1800, 2100, 3500, 4100].forEach(bx => { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); });
 
                   // Coins
-                  [[300, GY - 3 * B], [364, GY - 3 * B], [1200, GY - 4 * B], [1264, GY - 4 * B], [2000, GY - 3 * B], [2064, GY - 3 * B], [2800, GY - 4 * B], [2864, GY - 4 * B], [3500, GY - 3 * B], [3564, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
+                  [[200, GY - 3 * B], [264, GY - 3 * B], [800, GY - 4 * B], [864, GY - 4 * B], [1700, GY - 3 * B], [1764, GY - 3 * B], [2200, GY - 4 * B], [2264, GY - 4 * B], [3500, GY - 3 * B], [3564, GY - 3 * B]].forEach(([cx, cy]) => { const coin = this.coins.create(cx as number, cy as number, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: (cy as number) - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' }); });
 
-                  // === BOWSER BOSS ARENA (starts at x=4800) ===
+                  // Corridor before boss arena (auto-scroll section with 3 guaranteed 1-up ? blocks)
+                  for (let x = 4400; x < 4900; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
+                  // 3 ? blocks that always give green 1-up mushrooms
+                  [4500, 4650, 4800].forEach(bx => { const qb = this.qBlocks.create(bx, GY - 4 * B, 'qblock'); qb.setData('active', true); qb.setData('force1Up', true); });
+
+                  // === BOWSER BOSS ARENA (starts at x=4900, smaller arena) ===
                   // Boss arena floor
-                  for (let x = 4800; x < 6200; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
-                  // Arena walls
-                  for (let row = 0; row < 6; row++) { this.blocks.create(4800, GY - row * B, 'lava_block'); }
+                  for (let x = 4900; x < 5700; x += B) { this.blocks.create(x + B / 2, GY, 'lava_block'); this.blocks.create(x + B / 2, GY2, 'lava_block'); }
+                  // Arena walls (left and right)
+                  for (let row = 0; row < 10; row++) { this.blocks.create(4900, GY - row * B, 'lava_block'); this.blocks.create(5700, GY - row * B, 'lava_block'); }
 
-                  // Bowser boss
-                  const bowser = this.enemies.create(5500, GY - 60, 'bowser') as Phaser.Physics.Arcade.Sprite;
+                  // Bowser boss - starts idle, waiting
+                  const bowser = this.enemies.create(5400, GY - 66, 'bowser') as Phaser.Physics.Arcade.Sprite;
                   (bowser.body as any).allowGravity = true;
-                  bowser.setData('isBoss', true); bowser.setData('bossHP', 10); bowser.setData('dir', -80);
-                  bowser.setVelocityX(-80); (bowser.body as any).setBounceX(1);
-                  bowser.setScale(1.5); bowser.setBodySize(50, 50);
+                  bowser.setData('isBoss', true); bowser.setData('bossHP', 20); bowser.setData('dir', 0);
+                  bowser.setVelocityX(0); // Stays still until activated
+                  bowser.setScale(1.8); bowser.setBodySize(50, 56);
+                  bowser.setCollideWorldBounds(false);
+                  bowser.setData('activated', false);
 
-                  // Bowser jumps
-                  this.time.addEvent({ delay: 2500, loop: true, callback: () => {
-                     if (!bowser.active || this.gameOver || this.gameWon) return;
-                     bowser.setVelocityY(-500);
-                  }});
+                  // Bowser stomping/shaking animation
+                  this.tweens.add({ targets: bowser, angle: -3, duration: 150, yoyo: true, repeat: -1 });
+                  this.tweens.add({ targets: bowser, scaleY: 1.75, duration: 200, yoyo: true, repeat: -1, delay: 100 });
 
-                  // Bowser breathes fire
-                  this.time.addEvent({ delay: 1800, loop: true, callback: () => {
-                     if (!bowser.active || this.gameOver || this.gameWon) return;
-                     const fb = this.fireballs.create(bowser.x - 40, bowser.y, 'fire_breath') as Phaser.Physics.Arcade.Sprite;
-                     (fb.body as any).allowGravity = false;
-                     fb.setVelocityX(-250);
-                     this.time.delayedCall(3000, () => { if (fb && fb.active) fb.destroy(); });
-                  }});
+                  // Bowser collides with arena walls
+                  this.physics.add.collider(bowser, this.blocks);
 
-                  // Flag after boss arena
-                  this.flags.create(6100, GY - 192, 'flag');
+                  // Boss health bar (hidden until Bowser is on screen)
+                  const bossBarBg = this.add.rectangle(400, 460, 304, 20, 0x333333).setScrollFactor(0).setDepth(998).setAlpha(0);
+                  const bossBarFill = this.add.rectangle(400, 460, 300, 16, 0xff0000).setScrollFactor(0).setDepth(999).setAlpha(0);
+                  const bossBarText = this.add.text(400, 460, 'BOWSER', { fontSize: '12px', color: '#fff', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(999).setAlpha(0);
+                  bowser.setData('barFill', bossBarFill); bowser.setData('barBg', bossBarBg); bowser.setData('barText', bossBarText); bowser.setData('barShown', false);
+
+                  // Bowser activation functions (only start after camera reaches him)
+                  const activateBowser = () => {
+                     if (bowser.getData('activated')) return;
+                     bowser.setData('activated', true);
+                     bowser.setVelocityX(-100); (bowser.body as any).setBounceX(1);
+
+                     // Bowser jumps at random intervals
+                     const bowserJump = () => {
+                        if (!bowser.active || this.gameOver || this.gameWon) return;
+                        bowser.setVelocityY(-550);
+                        this.time.delayedCall(Phaser.Math.Between(2500, 4500), bowserJump);
+                     };
+                     this.time.delayedCall(1500, bowserJump);
+
+                     // Bowser breathes fire every 2 seconds
+                     const bowserFire = () => {
+                        if (!bowser.active || this.gameOver || this.gameWon) return;
+                        const d1 = Math.abs(this.p1.x - bowser.x);
+                        const d2 = Math.abs(this.p2.x - bowser.x);
+                        const target = d1 < d2 ? this.p1 : this.p2;
+                        const fireLeft = target.x < bowser.x;
+                        bowser.setFlipX(!fireLeft);
+                        const offsetX = fireLeft ? -50 : 50;
+                        const velX = fireLeft ? -180 : 180;
+                        const fb = this.fireballs.create(bowser.x + offsetX, bowser.y + 10, 'fire_breath') as Phaser.Physics.Arcade.Sprite;
+                        (fb.body as any).allowGravity = false;
+                        fb.setVelocityX(velX);
+                        if (!fireLeft) fb.setFlipX(true);
+                        this.time.delayedCall(4000, () => { if (fb && fb.active) fb.destroy(); });
+                        this.time.delayedCall(2000, bowserFire);
+                     };
+                     this.time.delayedCall(2000, bowserFire);
+
+                     // Bowser changes direction randomly
+                     this.time.addEvent({ delay: 2000, loop: true, callback: () => {
+                        if (!bowser.active || this.gameOver || this.gameWon) return;
+                        if (Math.random() < 0.4) {
+                           const newSpeed = Phaser.Math.Between(60, 140) * (Math.random() < 0.5 ? -1 : 1);
+                           bowser.setVelocityX(newSpeed);
+                        }
+                     }});
+                  };
+                  bowser.setData('activateFn', activateBowser);
+
+                  // Camera auto-scroll trigger: when player crosses x=4600, camera auto-scrolls to arena
+                  bowser.setData('cameraTriggered', false);
+
+                  // No flag in level 5 - defeating Bowser ends the game
                }
                this.startBGM();
+               // Start level timer (2 minutes, then -1 HP every 30s)
+               this.levelTimer = 120;
+               if (this.timerEvent) this.timerEvent.destroy();
+               this.timerEvent = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
+                  if (this.gameOver || this.gameWon || this.countingDown) return;
+                  this.levelTimer--;
+                  if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
+                     this.takeDamage(this.myPlayer);
+                  }
+               }});
             }
 
             musicPowerUp() { this.playPowerUpSound(); }
             playBrickSound() { if (!this.audioCtx) return; const now = this.audioCtx.currentTime; const osc1 = this.audioCtx.createOscillator(); const gain1 = this.audioCtx.createGain(); osc1.type = 'square'; osc1.frequency.setValueAtTime(220, now); osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08); gain1.gain.setValueAtTime(0.35, now); gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.12); osc1.connect(gain1); gain1.connect(this.audioCtx.destination); osc1.start(now); osc1.stop(now + 0.12); const osc2 = this.audioCtx.createOscillator(); const gain2 = this.audioCtx.createGain(); osc2.type = 'sawtooth'; osc2.frequency.setValueAtTime(600, now); osc2.frequency.exponentialRampToValueAtTime(200, now + 0.07); gain2.gain.setValueAtTime(0.2, now); gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.07); osc2.connect(gain2); gain2.connect(this.audioCtx.destination); osc2.start(now); osc2.stop(now + 0.07); }
             playBrickBreakSound() { if (!this.audioCtx) return; const now = this.audioCtx.currentTime; const osc1 = this.audioCtx.createOscillator(); const gain1 = this.audioCtx.createGain(); osc1.type = 'square'; osc1.frequency.setValueAtTime(300, now); osc1.frequency.exponentialRampToValueAtTime(50, now + 0.1); gain1.gain.setValueAtTime(0.5, now); gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.15); osc1.connect(gain1); gain1.connect(this.audioCtx.destination); osc1.start(now); osc1.stop(now + 0.15); const osc2 = this.audioCtx.createOscillator(); const gain2 = this.audioCtx.createGain(); osc2.type = 'sawtooth'; osc2.frequency.setValueAtTime(900, now); osc2.frequency.exponentialRampToValueAtTime(150, now + 0.08); gain2.gain.setValueAtTime(0.35, now); gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.08); osc2.connect(gain2); gain2.connect(this.audioCtx.destination); osc2.start(now); osc2.stop(now + 0.08); const osc3 = this.audioCtx.createOscillator(); const gain3 = this.audioCtx.createGain(); osc3.type = 'sawtooth'; osc3.frequency.setValueAtTime(500, now + 0.04); osc3.frequency.exponentialRampToValueAtTime(100, now + 0.12); gain3.gain.setValueAtTime(0.25, now + 0.04); gain3.gain.exponentialRampToValueAtTime(0.00001, now + 0.12); osc3.connect(gain3); gain3.connect(this.audioCtx.destination); osc3.start(now + 0.04); osc3.stop(now + 0.12); }
-            hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
-            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = Math.random() < 0.3; const tex = is1Up ? 'mushroom_1up' : 'mushroom'; const mush = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', is1Up); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); } }
-            collectMushroom(player: any, mush: any) { if (!mush.active) return; const is1Up = mush.getData('is1Up'); mush.destroy(); this.playPowerUpSound(); if (is1Up) { this.hearts++; this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else { player.setData('isBig', true); this.isBig = true; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
-            collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; if (this.coinCount >= 100) { this.coinCount = 0; this.hearts++; this.playPowerUpSound(); } }
-            hitEnemy(player: any, enemy: any) { if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); if (hp <= 0) { enemy.destroy(); this.playVictorySound(); this.gameWon = true; this.showBirthdayCelebration(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); } } else { if (player === this.myPlayer) this.takeDamage(player); } }
+            hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
+            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up') ? true : Math.random() < 0.3; const tex = is1Up ? 'mushroom_1up' : 'mushroom'; const mush = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', is1Up); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); } }
+            collectMushroom(player: any, mush: any) { if (!mush.active) return; const is1Up = mush.getData('is1Up'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (is1Up) { this.hearts++; this.show1Up(); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; this.hearts++; this.show1Up(); } }
+
+            addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 10000) > Math.floor(oldScore / 10000)) { this.hearts++; this.show1Up(); } }
+            show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
+            hitEnemy(player: any, enemy: any) { if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); this.playVictorySound(); this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
+
+            showHugAnimation() {
+               // Both players run toward each other
+               this.p1.setVelocity(0, 0); this.p2.setVelocity(0, 0);
+               // Face each other
+               this.p1.setFlipX(false); this.p2.setFlipX(true);
+               // Play run animation
+               this.p1.play('p1_run', true); this.p2.play('p2_run', true);
+               const meetX = (this.p1.x + this.p2.x) / 2;
+               const floorY = this.p1.y;
+               // Run toward each other
+               this.tweens.add({ targets: this.p1, x: meetX - 5, duration: 1500, ease: 'Linear' });
+               this.tweens.add({ targets: this.p2, x: meetX + 5, duration: 1500, ease: 'Linear', onComplete: () => {
+                  // Stop running, face each other
+                  this.p1.anims.stop(); this.p2.anims.stop();
+                  this.p1.setFlipX(true); this.p2.setFlipX(false);
+                  this.p1.setTexture('p1_run1'); this.p2.setTexture('p2_run1');
+                  // Small jump together (fall on floor moment)
+                  this.tweens.add({ targets: [this.p1, this.p2], y: floorY - 30, duration: 200, yoyo: true, ease: 'Quad.easeOut', onComplete: () => {
+                     // Hearts floating up
+                     this.time.addEvent({ delay: 300, repeat: 10, callback: () => {
+                        const hx = meetX + Phaser.Math.Between(-30, 30);
+                        const heart = this.add.text(hx, floorY - 20, '❤️', { fontSize: '24px' }).setDepth(100);
+                        this.tweens.add({ targets: heart, y: floorY - 100, alpha: 0, duration: 1500, onComplete: () => heart.destroy() });
+                     }});
+                     // After celebration moment, show birthday
+                     this.time.delayedCall(2500, () => this.showBirthdayCelebration());
+                  }});
+               }});
+            }
 
             showBirthdayCelebration() {
                // Stop BGM
@@ -1029,24 +1319,88 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
             touchFlag(player: any, flag: any) { const playerRole = (player === this.p1) ? 'p1' : 'p2'; if (playerRole !== role) return; if (this.finishedSet.has(playerRole)) return; socket.emit('flagTouched', playerRole); this.playVictorySound(); }
             createJoystick() {}
-            takeDamage(player: any) { if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            takeDamage(player: any) { if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+
+            deathAnimation(player: any) {
+               player.setVelocity(0, 0); (player.body as any).allowGravity = false;
+               player.setCollideWorldBounds(false); (player.body as any).enable = false;
+               player.setDepth(100); player.setAlpha(1); player.setFlipX(false);
+               // Switch to death frame (X pose - arms up, legs spread)
+               const pRole = player === this.p1 ? 'p1' : 'p2';
+               player.setTexture(`${pRole}_death`);
+               player.anims.stop();
+               // Enlarge briefly
+               this.tweens.add({ targets: player, scaleX: 2, scaleY: 2, duration: 300, onComplete: () => {
+                  // Jump up then fall down below screen
+                  this.tweens.add({ targets: player, y: player.y - 120, duration: 400, ease: 'Quad.easeOut', onComplete: () => {
+                     this.tweens.add({ targets: player, y: 700, duration: 900, ease: 'Quad.easeIn' });
+                  }});
+               }});
+               // Show GAME OVER in center of screen after a delay
+               this.time.delayedCall(1500, () => {
+                  const goText = this.add.text(400, 240, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0);
+                  this.tweens.add({ targets: goText, alpha: 1, duration: 500 });
+               });
+            }
 
             update() {
-               if (this.gameOver) { this.uiText.setText('GAME OVER!'); return; }
+               if (this.gameOver) { this.uiText.setText(''); return; }
                if (this.waitingForOther && !this.countingDown) { this.uiText.setText(this.finishedSet.has('p1') && this.finishedSet.has('p2') ? 'Both done! Starting...' : `Waiting for ${this.finishedSet.has('p1') ? 'P2' : 'P1'}...`); return; }
                if (this.countingDown) return;
 
                this.movingPlatforms.getChildren().forEach((p: any) => {
-                  const originX = p.getData('originX'); const range = p.getData('range'); let speed = p.getData('speed'); const oldX = p.x;
+                  const originX = p.getData('originX'); const range = p.getData('range'); let speed = p.getData('speed');
                   if (p.x < originX - range && speed < 0) { speed = Math.abs(speed); p.setData('speed', speed); }
                   else if (p.x > originX + range && speed > 0) { speed = -Math.abs(speed); p.setData('speed', speed); }
                   (p.body as any).setVelocityX(speed);
-                  const deltaX = p.x - oldX;
-                  [this.p1, this.p2].forEach(plr => { if (plr.body.touching.down && Phaser.Geom.Intersects.RectangleToRectangle(plr.getBounds(), p.getBounds())) plr.x += deltaX; });
+                  // Carry players standing on this platform
+                  [this.p1, this.p2].forEach(plr => {
+                     if (plr.body.touching.down) {
+                        const pBounds = p.getBounds();
+                        const plrBottom = plr.y + plr.body.height / 2;
+                        const platTop = pBounds.y;
+                        if (Math.abs(plrBottom - platTop) < 10 && plr.x > pBounds.x && plr.x < pBounds.x + pBounds.width) {
+                           plr.x += speed / 60;
+                        }
+                     }
+                  });
                });
 
                this.clouds.getChildren().forEach((c: any) => { c.x -= c.getData('speed') * 0.02; if (c.x < -200) c.x = 10000; });
-               this.enemies.getChildren().forEach((e: any) => { if (e.body && e.body.velocity.x === 0) { const d = (e.getData('dir') || 60) * -1; e.setVelocityX(d); e.setData('dir', d); } });
+               this.enemies.getChildren().forEach((e: any) => {
+                  if (!e.body || e.getData('isBoss')) return;
+                  // Reverse if stopped (hit a wall)
+                  if (e.body.velocity.x === 0 && e.body.touching.down) { const d = (e.getData('dir') || 60) * -1; e.setVelocityX(d); e.setData('dir', d); }
+                  // Edge detection: if on ground, check if there's floor ahead
+                  if (e.body.touching.down) {
+                     const dir = e.body.velocity.x > 0 ? 1 : -1;
+                     const checkX = e.x + dir * 20;
+                     const checkY = e.y + 20;
+                     const tileBelow = this.blocks.getChildren().some((b: any) => Math.abs(b.x - checkX) < 20 && Math.abs(b.y - checkY) < 20);
+                     if (!tileBelow) { const d = (e.getData('dir') || 60) * -1; e.setVelocityX(d); e.setData('dir', d); }
+                  }
+               });
+
+               // Rotate fire bars
+               this.children.list.forEach((child: any) => {
+                  if (child.getData && child.getData('firebar')) {
+                     const cx = child.getData('centerX'); const cy = child.getData('centerY');
+                     const radius = child.getData('radius'); const speed = child.getData('speed');
+                     let angle = child.getData('angle') + speed * 0.02;
+                     child.setData('angle', angle);
+                     child.x = cx + Math.cos(angle) * radius;
+                     child.y = cy + Math.sin(angle) * radius;
+                  }
+               });
+               // Check fire bar collision with players (tight hitbox - must touch the ball)
+               this.children.list.forEach((child: any) => {
+                  if (child.getData && child.getData('firebar')) {
+                     const dist1 = Phaser.Math.Distance.Between(this.p1.x, this.p1.y, child.x, child.y);
+                     const dist2 = Phaser.Math.Distance.Between(this.p2.x, this.p2.y, child.x, child.y);
+                     if (dist1 < 10) this.takeDamage(this.p1);
+                     if (dist2 < 10) this.takeDamage(this.p2);
+                  }
+               });
 
                const isLeft = this.cursors.left.isDown || this.keyA.isDown || this.joyKeys.left;
                const isRight = this.cursors.right.isDown || this.keyD.isDown || this.joyKeys.right;
@@ -1069,11 +1423,59 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                if (animState !== 'run') this.myPlayer.setTexture(`${role}_${animState}`);
 
                const targetX = Math.max(Math.min(this.p1.x, this.p2.x) + 300, this.cameras.main.scrollX + 400);
-               this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 9600);
+               // Don't override camera during boss auto-scroll
+               let autoScrolling = false;
+               this.enemies.getChildren().forEach((e: any) => { if (e.getData && e.getData('isBoss') && e.getData('autoScrollActive')) autoScrolling = true; if (e.getData && e.getData('isBoss') && e.getData('arenaLocked')) autoScrolling = true; });
+               if (!autoScrolling) this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 9600);
                if (this.myPlayer.x < this.cameras.main.scrollX + 10) this.myPlayer.x = this.cameras.main.scrollX + 10;
 
+               // Instant death if player falls to the bottom of the screen
+               if (this.myPlayer.y > 470 && !this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.myPlayer); }
+
+               // Show Bowser health bar when he's visible on screen
+               this.enemies.getChildren().forEach((e: any) => {
+                  if (e.getData && e.getData('isBoss')) {
+                     const camLeft = this.cameras.main.scrollX;
+                     const camRight = camLeft + 800;
+                     // Camera auto-scroll: once player crosses x=4400, camera slowly moves right
+                     if (!e.getData('cameraTriggered') && this.myPlayer.x > 4400 && this.level === 5 && !this.gameOver && !this.gameWon) {
+                        e.setData('cameraTriggered', true);
+                        e.setData('autoScrollActive', true);
+                     }
+                     // Auto-scroll the camera slowly to the right
+                     if (e.getData('autoScrollActive') && !this.gameOver && !this.gameWon) {
+                        this.cameraCenter.x += 1.2; // slow scroll speed
+                        // Player can't go behind the left edge of camera
+                        if (this.myPlayer.x < this.cameras.main.scrollX + 20) this.myPlayer.x = this.cameras.main.scrollX + 20;
+                        // Stop auto-scroll when camera reaches the arena
+                        if (this.cameraCenter.x >= 5300) {
+                           e.setData('autoScrollActive', false);
+                           e.setData('arenaLocked', true);
+                        }
+                     }
+                     // Show health bar when Bowser is on screen
+                     if (!e.getData('barShown') && e.x > camLeft && e.x < camRight) {
+                        e.setData('barShown', true);
+                        const bf = e.getData('barFill'); const bb = e.getData('barBg'); const bt = e.getData('barText');
+                        if (bf) this.tweens.add({ targets: bf, alpha: 1, duration: 500 });
+                        if (bb) this.tweens.add({ targets: bb, alpha: 1, duration: 500 });
+                        if (bt) this.tweens.add({ targets: bt, alpha: 1, duration: 500 });
+                        // Activate Bowser when visible
+                        const activateFn = e.getData('activateFn');
+                        if (activateFn) activateFn();
+                     }
+                     // Confine player to arena once locked in
+                     if (e.getData('arenaLocked') && !this.gameOver && !this.gameWon) {
+                        if (this.myPlayer.x < 4932) this.myPlayer.x = 4932;
+                        if (this.myPlayer.x > 5668) this.myPlayer.x = 5668;
+                     }
+                  }
+               });
+
                socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale });
-               this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${'❤️'.repeat(this.hearts)}`);
+               const timerDisplay = this.levelTimer >= 0 ? `⏱${Math.floor(this.levelTimer / 60)}:${(this.levelTimer % 60).toString().padStart(2, '0')}` : `⏱0:00`;
+               const heartsDisplay = this.hearts > 8 ? `❤️×${this.hearts}` : '❤️'.repeat(this.hearts);
+               this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}`);
             }
          }
 
@@ -1083,22 +1485,71 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
       return () => {
          isDestroyed = true; if (game) game.destroy(true); if (socket) socket.disconnect();
+         document.removeEventListener('selectstart', preventSelect);
+         document.removeEventListener('contextmenu', preventSelect);
          if (typeof window !== 'undefined') { const all = window.setInterval(() => {}, 9999); for (let i = 0; i <= all; i++) window.clearInterval(i); }
       };
    }, [role]);
 
    const press = useCallback((action: keyof typeof joyKeysRef.current, val: boolean) => { joyKeysRef.current[action] = val; }, []);
    const btnStyle = (color: string): React.CSSProperties => ({ width: 64, height: 64, borderRadius: '50%', background: color, border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 22, fontWeight: 'bold', cursor: 'pointer', userSelect: 'none', touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.5)', flexShrink: 0 } as React.CSSProperties);
-   const bind = (action: keyof typeof joyKeysRef.current) => ({ onPointerDown: (e: React.PointerEvent) => { e.currentTarget.setPointerCapture(e.pointerId); press(action, true); }, onPointerUp: () => press(action, false), onPointerLeave: () => press(action, false), onContextMenu: (e: React.MouseEvent) => e.preventDefault() });
+
+   // Track active touches per button for anti-ghosting drag support
+   const activeActionsRef = useRef<Map<number, string>>(new Map());
+
+   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+         const touch = e.changedTouches[i];
+         const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+         const action = el?.dataset?.action;
+         if (action) {
+            activeActionsRef.current.set(touch.identifier, action);
+            joyKeysRef.current[action as keyof typeof joyKeysRef.current] = true;
+         }
+      }
+   }, []);
+
+   const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+         const touch = e.changedTouches[i];
+         const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+         const newAction = el?.dataset?.action || '';
+         const prevAction = activeActionsRef.current.get(touch.identifier) || '';
+         // Only switch if we landed on a NEW button — if no button, keep the old one pressed
+         if (newAction && newAction !== prevAction) {
+            if (prevAction) joyKeysRef.current[prevAction as keyof typeof joyKeysRef.current] = false;
+            joyKeysRef.current[newAction as keyof typeof joyKeysRef.current] = true;
+            activeActionsRef.current.set(touch.identifier, newAction);
+         }
+      }
+   }, []);
+
+   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+         const touch = e.changedTouches[i];
+         const prevAction = activeActionsRef.current.get(touch.identifier);
+         if (prevAction) {
+            joyKeysRef.current[prevAction as keyof typeof joyKeysRef.current] = false;
+            activeActionsRef.current.delete(touch.identifier);
+         }
+      }
+   }, []);
+
+   const touchProps = { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd, onTouchCancel: handleTouchEnd };
 
    return (
-      <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'manipulation' } as React.CSSProperties}>
+      <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'none' } as React.CSSProperties}>
          <div ref={gameRef} style={{ width: '100%', height: '100%' }} />
-         <div style={{ position: 'absolute', left: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
-            <div /><button style={btnStyle('rgba(60,60,200,0.82)')} {...bind('jump')}>▲</button><div />
-            <button style={btnStyle('rgba(60,60,200,0.82)')} {...bind('left')}>◀</button><button style={btnStyle('rgba(60,60,200,0.82)')} {...bind('down')}>▼</button><button style={btnStyle('rgba(60,60,200,0.82)')} {...bind('right')}>▶</button>
+         <div {...touchProps} style={{ position: 'absolute', left: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
+            <div /><button data-action="jump" style={btnStyle('rgba(60,60,200,0.82)')}>▲</button><div />
+            <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
          </div>
-         <button style={{ ...btnStyle('rgba(210,30,30,0.88)'), position: 'absolute', right: 30, bottom: 8, transform: 'translateY(-50%)', width: 72, height: 72, fontSize: 15, zIndex: 10 }} {...bind('jump')}>JUMP</button>
+         <div {...touchProps} style={{ position: 'absolute', right: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
+            <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
+         </div>
       </div>
    );
 }
