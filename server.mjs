@@ -42,6 +42,11 @@ app.prepare().then(() => {
       io.to('game').emit('stateUpdate', state);
     });
 
+    socket.on('setServerLevel', (level) => {
+      currentLevel = level;
+      io.to('game').emit('loadLevel', currentLevel);
+    });
+
     socket.on('updateState', ({ role, x, y, anim, flipX, scale }) => {
       if (role === 'p1' || role === 'p2') {
         state[role] = { ...state[role], x, y, anim, flipX, scale };

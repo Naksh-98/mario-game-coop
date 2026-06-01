@@ -3,10 +3,70 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
+export default function PhaserGame({
+   role,
+   musicVolume = 0.5,
+   sfxVolume = 0.7,
+   btnPos = 'left',
+   initialLevel = 1,
+   initialScore = 0,
+   initialHearts = 3,
+   initialCoins = 0
+}: {
+   role: 'p1' | 'p2';
+   musicVolume?: number;
+   sfxVolume?: number;
+   btnPos?: 'left' | 'right';
+   initialLevel?: number;
+   initialScore?: number;
+   initialHearts?: number;
+   initialCoins?: number;
+}) {
    const gameRef = useRef<HTMLDivElement>(null);
    // Shared joy-keys object — React buttons write here, Phaser reads here
    const joyKeysRef = useRef({ left: false, right: false, down: false, jump: false });
+   const musicVolumeRef = useRef(musicVolume);
+   const sfxVolumeRef = useRef(sfxVolume);
+   useEffect(() => { musicVolumeRef.current = musicVolume; }, [musicVolume]);
+   useEffect(() => { sfxVolumeRef.current = sfxVolume; }, [sfxVolume]);
+
+   const [showSaveBtn, setShowSaveBtn] = React.useState(false);
+   const [saveData, setSaveData] = React.useState<any>(null);
+
+   React.useEffect(() => {
+      const handler = (e: Event) => {
+         const customEvent = e as CustomEvent;
+         setSaveData(customEvent.detail);
+         setShowSaveBtn(true);
+      };
+      window.addEventListener('marioGameWon', handler);
+      return () => window.removeEventListener('marioGameWon', handler);
+   }, []);
+
+   const handleSaveGame = () => {
+      const dataToSave = {
+         score: saveData?.score || 0,
+         hearts: saveData?.hearts || 3,
+         coinCount: saveData?.coinCount || 0,
+         level: 6,
+         savedAt: new Date().toISOString()
+      };
+      try {
+         const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: 'application/json' });
+         const url = URL.createObjectURL(blob);
+         const link = document.createElement('a');
+         link.href = url;
+         link.download = `mario_savegame_${new Date().toISOString().split('T')[0]}.json`;
+         document.body.appendChild(link);
+         link.click();
+         document.body.removeChild(link);
+         URL.revokeObjectURL(url);
+         alert('Save game downloaded successfully! Keep this file safe and load it on the main menu to resume from Level 6.');
+      } catch (err) {
+         alert('Failed to download save game file.');
+      }
+      setShowSaveBtn(false);
+   };
 
    useEffect(() => {
       if (typeof window === 'undefined') return;
@@ -52,6 +112,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
             audioCtx!: AudioContext;
             bgmInterval!: number;
+            currentBgm: Phaser.Sound.BaseSound | null = null;
 
             joyKeys = joyKeysRef.current;
             prevJump = false;
@@ -69,9 +130,24 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             timerEvent!: Phaser.Time.TimerEvent;
             countdownText!: Phaser.GameObjects.Text;
             finishedSet: Set<string> = new Set();
+            castleX = 0;
 
             constructor() {
                super({ key: 'MainScene' });
+            }
+
+            preload() {
+               this.load.audio('browsercontact', '/audio/browsercontact.mp3');
+               this.load.audio('level1', '/audio/level1.mp3');
+               this.load.audio('level2', '/audio/level2.mp3');
+               this.load.audio('level3', '/audio/level3.mp3');
+               this.load.audio('level4', '/audio/level4new.mp3');
+               this.load.audio('level5', '/audio/level_5.mp3');
+               this.load.audio('mariodeath', '/audio/mariodeath.mp3');
+               this.load.audio('victory', '/audio/winningsongafterbothtouchflag.mp3');
+               this.load.audio('coin', '/audio/mario_coin_sound.mp3');
+               this.load.audio('jump', '/audio/Super+Mario+-+Jump+(Sound+Effect).mp3');
+               this.load.audio('killedbrowser', '/audio/killedbrowser.mp3');
             }
 
             drawPlayer(key: string, shirtCol: number, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
@@ -158,11 +234,12 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
 
             playAudio(freq: number, type: OscillatorType, dur: number, ramp = true) {
-               if (!this.audioCtx || freq === 0) return;
+               if (!this.audioCtx || freq === 0 || sfxVolumeRef.current <= 0) return;
                const osc = this.audioCtx.createOscillator();
                const gain = this.audioCtx.createGain();
                osc.type = type;
                osc.frequency.setValueAtTime(freq, this.audioCtx.currentTime);
+               gain.gain.setValueAtTime(sfxVolumeRef.current, this.audioCtx.currentTime);
                osc.connect(gain); gain.connect(this.audioCtx.destination);
                osc.start();
                if (ramp) {
@@ -174,17 +251,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
 
             playJumpSound() {
-               if (!this.audioCtx) return;
-               const now = this.audioCtx.currentTime;
-               const osc = this.audioCtx.createOscillator();
-               const gain = this.audioCtx.createGain();
-               osc.type = 'square';
-               osc.frequency.setValueAtTime(150, now);
-               osc.frequency.exponentialRampToValueAtTime(600, now + 0.15);
-               gain.gain.setValueAtTime(0.2, now);
-               gain.gain.exponentialRampToValueAtTime(0.00001, now + 0.15);
-               osc.connect(gain); gain.connect(this.audioCtx.destination);
-               osc.start(); osc.stop(now + 0.15);
+               try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.9 }); } catch (e) {}
             }
 
             playStompSound() {
@@ -201,9 +268,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
 
             playCoinSound() {
-               if (!this.audioCtx) return;
-               this.playAudio(987, 'sine', 0.1);
-               setTimeout(() => this.playAudio(1318, 'sine', 0.2), 80);
+               try { this.sound.play('coin', { volume: sfxVolumeRef.current }); } catch (e) {}
             }
 
             playPowerUpSound() {
@@ -215,19 +280,35 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
 
             playVictorySound() {
-               if (!this.audioCtx) return;
-               const melody = [523, 659, 783, 1046, 783, 1046];
-               melody.forEach((f, i) => {
-                  setTimeout(() => this.playAudio(f, 'square', 0.2), i * 150);
-               });
+               if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
+               try { this.sound.play('victory', { volume: musicVolumeRef.current * 1.2 }); } catch (e) { console.error(e); }
+            }
+
+            playKilledBrowserSound() {
+               if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
+               try { this.sound.play('killedbrowser', { volume: musicVolumeRef.current * 1.2 }); } catch (e) { console.error(e); }
             }
 
             playGameOverSound() {
-               if (!this.audioCtx) return;
-               const notes = [392, 349, 329, 261];
-               notes.forEach((f, i) => {
-                  setTimeout(() => this.playAudio(f, 'square', 0.3), i * 200);
-               });
+               if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
+               try { this.sound.play('mariodeath', { volume: sfxVolumeRef.current }); } catch (e) { console.error(e); }
+            }
+
+            startBGM() {
+               if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
+               if (this.gameOver || this.gameWon || this.countingDown) return;
+               let key = '';
+               if (this.level === 1) key = 'level1';
+               else if (this.level === 2) key = 'level2';
+               else if (this.level === 3) key = 'level3';
+               else if (this.level === 4) key = 'level4';
+               else if (this.level === 5) key = 'level5';
+               if (key) {
+                  try {
+                     this.currentBgm = this.sound.add(key, { loop: true, volume: musicVolumeRef.current });
+                     this.currentBgm.play();
+                  } catch (e) { console.error('Error playing BGM:', e); }
+               }
             }
 
             getMusicData(lvl: number) {
@@ -273,25 +354,6 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   const bass = [...b1, ...b2, ...b1, ...b2];
                   return { melody, bass, tempo: 140, mType: 'sawtooth' as OscillatorType, bType: 'square' as OscillatorType };
                }
-            }
-
-            startBGM() {
-               if (this.bgmInterval) window.clearInterval(this.bgmInterval);
-               const data = this.getMusicData(this.level);
-               let noteIdx = 0;
-               this.bgmInterval = window.setInterval(() => {
-                  if (this.gameOver || this.gameWon || this.countingDown) return;
-                  if (data.melody[noteIdx % data.melody.length] > 0)
-                     this.playAudio(data.melody[noteIdx % data.melody.length], data.mType, 0.12);
-                  if (data.bass[noteIdx % data.bass.length] > 0)
-                     this.playAudio(data.bass[noteIdx % data.bass.length], data.bType, 0.22);
-                  if (this.level === 2) {
-                     if (noteIdx % 8 === 4) this.playAudio(6000, 'square', 0.02);
-                  } else {
-                     if (noteIdx % 4 === 2) this.playAudio(8000, 'square', 0.03);
-                  }
-                  noteIdx++;
-               }, data.tempo) as unknown as number;
             }
 
             createTextures() {
@@ -638,6 +700,36 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
             create() {
                this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+               
+               // Initialize stats from React props closure
+               this.hearts = initialHearts;
+               this.level = initialLevel;
+               this.coinCount = initialCoins;
+               this.score = initialScore;
+
+               if (initialLevel > 1) {
+                  socket.emit('setServerLevel', initialLevel);
+               }
+
+               // Unsuspend/Resume both the synthesis and Sound Manager contexts on any user input
+               const resumeAudio = () => {
+                  if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                     this.audioCtx.resume();
+                  }
+                  const snd = this.sound as any;
+                  if (snd.context && snd.context.state === 'suspended') {
+                     snd.context.resume().then(() => {
+                        if (this.currentBgm && !this.currentBgm.isPlaying) {
+                           this.currentBgm.play();
+                        } else if (!this.currentBgm) {
+                           this.startBGM();
+                        }
+                     });
+                  }
+               };
+               this.input.on('pointerdown', resumeAudio);
+               this.input.keyboard?.on('keydown', resumeAudio);
+
                this.physics.world.setBounds(0, 0, 10000, 480);
                this.cameraCenter = this.add.rectangle(400, 240, 10, 10, 0, 0);
                this.cameras.main.startFollow(this.cameraCenter, false, 0.1, 0.1);
@@ -735,10 +827,54 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                   this.finishedSet.add(finRole);
                   if (finRole === role) { this.waitingForOther = true; this.playAudio(523, 'square', 0.15); setTimeout(() => this.playAudio(659, 'square', 0.15), 150); setTimeout(() => this.playAudio(784, 'square', 0.2), 300); }
                });
-
+               
                socket.on('startCountdown', (nextLvl: number) => {
                   this.countingDown = true; this.gameWon = true; let tick = 10;
                   const countNotes = [220, 247, 262, 294, 330, 349, 392, 440, 494, 523];
+
+                  if (this.level === 1 || this.level === 2 || this.level === 3) {
+                     // 1. Disable physics bodies
+                     (this.p1.body as any).enable = false;
+                     (this.p2.body as any).enable = false;
+
+                     // 2. Play run animations
+                     this.p1.play('p1_run', true);
+                     this.p2.play('p2_run', true);
+
+                     // 3. Move players to the castle door
+                     const doorX = this.castleX + 80;
+
+                     // We will tween them to doorX
+                     this.tweens.add({
+                        targets: [this.p1, this.p2],
+                        x: doorX,
+                        duration: 2000,
+                        ease: 'Linear',
+                        onComplete: () => {
+                           // Once at the door, face forward / stop animation
+                           this.p1.anims.stop();
+                           this.p2.anims.stop();
+                           this.p1.setTexture('p1_run1');
+                           this.p2.setTexture('p2_run1');
+
+                           // Set depth to 0 so they walk behind the castle walls (depth 12)
+                           this.p1.setDepth(0);
+                           this.p2.setDepth(0);
+
+                           // Walk "up" (into the door) by moving Y up and fading out
+                           this.tweens.add({
+                              targets: [this.p1, this.p2],
+                              y: '-=15',
+                              scaleX: 0.1,
+                              scaleY: 0.1,
+                              alpha: 0,
+                              duration: 1000,
+                              ease: 'Quad.easeOut'
+                           });
+                        }
+                     });
+                  }
+                  
                   const doTick = () => {
                      if (tick <= 0) {
                         this.playAudio(784, 'square', 0.1); setTimeout(() => this.playAudio(880, 'square', 0.1), 100); setTimeout(() => this.playAudio(988, 'square', 0.1), 200); setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
@@ -769,6 +905,37 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true);
                this.children.list.filter((c: any) => c.getData && c.getData('decoration')).forEach((c: any) => c.destroy());
 
+               if (this.p1 && this.p2) {
+                  this.p1.setAlpha(1); this.p2.setAlpha(1);
+                  this.p1.setDepth(10); this.p2.setDepth(10);
+                  this.p1.setScale(this.p1.getData('isBig') ? 1.4 : 1);
+                  this.p2.setScale(this.p2.getData('isBig') ? 1.4 : 1);
+                  if (this.p1.body) (this.p1.body as any).enable = true;
+                  if (this.p2.body) (this.p2.body as any).enable = true;
+                  (this.p1.body as any).allowGravity = true;
+                  (this.p2.body as any).allowGravity = true;
+               }
+
+               if (lvl >= 6) {
+                  this.add.rectangle(400, 240, 800, 480, 0x1a1a2e).setScrollFactor(0).setDepth(-10).setData('decoration', true);
+                  this.add.text(400, 200, "LEVEL 6\nCOMING SOON!", { fontSize: "40px", color: "#ffd700", fontStyle: "bold", align: "center", stroke: "#000", strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
+                  this.add.text(400, 300, "You successfully loaded your save game!\nStay tuned for the next update.", { fontSize: "18px", color: "#ffffff", align: "center", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
+                  if (this.p1 && this.p2) {
+                     this.p1.setPosition(300, 240);
+                     this.p2.setPosition(500, 240);
+                     (this.p1.body as any).allowGravity = false;
+                     (this.p2.body as any).allowGravity = false;
+                     this.p1.setVelocity(0, 0);
+                     this.p2.setVelocity(0, 0);
+                  }
+                  if (this.currentBgm) {
+                     this.currentBgm.stop();
+                     this.currentBgm.destroy();
+                     this.currentBgm = null;
+                  }
+                  return;
+               }
+
                const B = 32; const GY = 440; const GY2 = 472; const eSpeed = 55 + lvl * 12;
 
                const addPipe = (px: number, segs: number, piranha = false) => {
@@ -783,9 +950,51 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                };
                const addGoomba = (ex: number, ey = GY - B) => { const en = this.enemies.create(ex, ey, 'enemy') as Phaser.Physics.Arcade.Sprite; (en.body as any).allowGravity = true; en.setVelocityX(-eSpeed); en.setData('dir', -eSpeed); (en.body as any).setBounceX(1); };
                const addKoopa = (ex: number, ey = GY - B) => { const kp = this.enemies.create(ex, ey, 'koopa') as Phaser.Physics.Arcade.Sprite; (kp.body as any).allowGravity = true; kp.setVelocityX(-eSpeed * 0.8); kp.setData('dir', -eSpeed * 0.8); (kp.body as any).setBounceX(1); };
-               const addMovPlat = (px: number, py: number, spd: number, range = 90) => { const pl = this.movingPlatforms.create(px, py, 'movingPlat') as Phaser.Physics.Arcade.Sprite; pl.setData('originX', px); pl.setData('speed', spd); pl.setData('range', range); (pl.body as any).allowGravity = false; (pl.body as any).immovable = true; };
-               const buildCastle = (cx: number) => { for (let col = 0; col < 5; col++) for (let row = 0; row < 4; row++) this.blocks.create(cx + col * B + B / 2, GY - row * B, 'castle_wall'); for (let row = 4; row < 7; row++) { this.blocks.create(cx + B / 2, GY - row * B, 'castle_wall'); this.blocks.create(cx + 4 * B + B / 2, GY - row * B, 'castle_wall'); } };
-               const buildStairs = (startX: number, tex = 'block') => { for (let step = 0; step < 8; step++) { const sx = startX + step * B; for (let row = 0; row <= step; row++) this.blocks.create(sx + B / 2, GY - row * B, tex); } };
+               const addMovPlat = (px: number, py: number, spd: number, range = 90) => { const pl = this.movingPlatforms.create(px, py, 'movingPlat') as Phaser.Physics.Arcade.Sprite; pl.setData('originX', px); pl.setData('speed', spd); pl.setData('range', range); (pl.body as any).allowGravity = false; (pl.body as any).immovable = true; };                
+               const buildCastle = (cx: number) => {
+                   this.castleX = cx;
+
+                   // Door background (black rectangle, depth 1, behind players)
+                   const doorBg = this.add.rectangle(cx + 80, GY - 48, 32, 64, 0x000000).setDepth(1);
+                   doorBg.setData('decoration', true);
+
+                   for (let col = 0; col < 5; col++) {
+                      for (let row = 0; row < 4; row++) {
+                         // Leave empty space for the door (col 2, row 0, 1, 2)
+                         if (col === 2 && row < 3) continue;
+
+                         const wall = this.blocks.create(cx + col * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                         wall.setDepth(12); // Front of players
+                      }
+                   }
+                   for (let row = 4; row < 7; row++) {
+                      const wallL = this.blocks.create(cx + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                      const wallR = this.blocks.create(cx + 4 * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                      wallL.setDepth(12);
+                      wallR.setDepth(12);
+                   }
+
+                   // Windows (black rectangles with border decoration on col 1 & 3, row 3)
+                   // Left window
+                   const winL = this.add.rectangle(cx + 48, GY - 96, 12, 18, 0x000000).setDepth(13);
+                   winL.setData('decoration', true);
+                   const winFrameL = this.add.graphics().setDepth(13).setData('decoration', true);
+                   winFrameL.lineStyle(2, 0x5a3010, 1);
+                   winFrameL.strokeRect(cx + 42, GY - 105, 12, 18);
+
+                   // Right window
+                   const winR = this.add.rectangle(cx + 112, GY - 96, 12, 18, 0x000000).setDepth(13);
+                   winR.setData('decoration', true);
+                   const winFrameR = this.add.graphics().setDepth(13).setData('decoration', true);
+                   winFrameR.lineStyle(2, 0x5a3010, 1);
+                   winFrameR.strokeRect(cx + 106, GY - 105, 12, 18);
+
+                   // Door frame outline
+                   const doorFrame = this.add.graphics().setDepth(13).setData('decoration', true);
+                   doorFrame.lineStyle(3, 0x5a3010, 1);
+                   doorFrame.strokeRect(cx + 64, GY - 80, 32, 64);
+                };
+                const buildStairs = (startX: number, tex = 'block') => { for (let step = 0; step < 8; step++) { const sx = startX + step * B; for (let row = 0; row <= step; row++) this.blocks.create(sx + B / 2, GY - row * B, tex); } };
 
                if (lvl === 1) {
                   this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
@@ -1217,16 +1426,72 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
             }
 
             musicPowerUp() { this.playPowerUpSound(); }
-            playBrickSound() { if (!this.audioCtx) return; const now = this.audioCtx.currentTime; const osc1 = this.audioCtx.createOscillator(); const gain1 = this.audioCtx.createGain(); osc1.type = 'square'; osc1.frequency.setValueAtTime(220, now); osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08); gain1.gain.setValueAtTime(0.35, now); gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.12); osc1.connect(gain1); gain1.connect(this.audioCtx.destination); osc1.start(now); osc1.stop(now + 0.12); const osc2 = this.audioCtx.createOscillator(); const gain2 = this.audioCtx.createGain(); osc2.type = 'sawtooth'; osc2.frequency.setValueAtTime(600, now); osc2.frequency.exponentialRampToValueAtTime(200, now + 0.07); gain2.gain.setValueAtTime(0.2, now); gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.07); osc2.connect(gain2); gain2.connect(this.audioCtx.destination); osc2.start(now); osc2.stop(now + 0.07); }
-            playBrickBreakSound() { if (!this.audioCtx) return; const now = this.audioCtx.currentTime; const osc1 = this.audioCtx.createOscillator(); const gain1 = this.audioCtx.createGain(); osc1.type = 'square'; osc1.frequency.setValueAtTime(300, now); osc1.frequency.exponentialRampToValueAtTime(50, now + 0.1); gain1.gain.setValueAtTime(0.5, now); gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.15); osc1.connect(gain1); gain1.connect(this.audioCtx.destination); osc1.start(now); osc1.stop(now + 0.15); const osc2 = this.audioCtx.createOscillator(); const gain2 = this.audioCtx.createGain(); osc2.type = 'sawtooth'; osc2.frequency.setValueAtTime(900, now); osc2.frequency.exponentialRampToValueAtTime(150, now + 0.08); gain2.gain.setValueAtTime(0.35, now); gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.08); osc2.connect(gain2); gain2.connect(this.audioCtx.destination); osc2.start(now); osc2.stop(now + 0.08); const osc3 = this.audioCtx.createOscillator(); const gain3 = this.audioCtx.createGain(); osc3.type = 'sawtooth'; osc3.frequency.setValueAtTime(500, now + 0.04); osc3.frequency.exponentialRampToValueAtTime(100, now + 0.12); gain3.gain.setValueAtTime(0.25, now + 0.04); gain3.gain.exponentialRampToValueAtTime(0.00001, now + 0.12); osc3.connect(gain3); gain3.connect(this.audioCtx.destination); osc3.start(now + 0.04); osc3.stop(now + 0.12); }
+            playBrickSound() {
+                if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
+                const vol = sfxVolumeRef.current;
+                const now = this.audioCtx.currentTime;
+                const osc1 = this.audioCtx.createOscillator();
+                const gain1 = this.audioCtx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(220, now);
+                osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+                gain1.gain.setValueAtTime(0.35 * vol, now);
+                gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
+                osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
+                osc1.start(now); osc1.stop(now + 0.12);
+
+                const osc2 = this.audioCtx.createOscillator();
+                const gain2 = this.audioCtx.createGain();
+                osc2.type = 'sawtooth';
+                osc2.frequency.setValueAtTime(600, now);
+                osc2.frequency.exponentialRampToValueAtTime(200, now + 0.07);
+                gain2.gain.setValueAtTime(0.2 * vol, now);
+                gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.07);
+                osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
+                osc2.start(now); osc2.stop(now + 0.07);
+             }
+
+             playBrickBreakSound() {
+                if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
+                const vol = sfxVolumeRef.current;
+                const now = this.audioCtx.currentTime;
+                const osc1 = this.audioCtx.createOscillator();
+                const gain1 = this.audioCtx.createGain();
+                osc1.type = 'square';
+                osc1.frequency.setValueAtTime(300, now);
+                osc1.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+                gain1.gain.setValueAtTime(0.5 * vol, now);
+                gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.15);
+                osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
+                osc1.start(now); osc1.stop(now + 0.15);
+
+                const osc2 = this.audioCtx.createOscillator();
+                const gain2 = this.audioCtx.createGain();
+                osc2.type = 'sawtooth';
+                osc2.frequency.setValueAtTime(900, now);
+                osc2.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+                gain2.gain.setValueAtTime(0.35 * vol, now);
+                gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.08);
+                osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
+                osc2.start(now); osc2.stop(now + 0.08);
+
+                const osc3 = this.audioCtx.createOscillator();
+                const gain3 = this.audioCtx.createGain();
+                osc3.type = 'sawtooth';
+                osc3.frequency.setValueAtTime(500, now + 0.04);
+                osc3.frequency.exponentialRampToValueAtTime(100, now + 0.12);
+                gain3.gain.setValueAtTime(0.25 * vol, now + 0.04);
+                gain3.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
+                osc3.connect(gain3); gain3.connect(this.audioCtx.destination);
+                osc3.start(now + 0.04); osc3.stop(now + 0.12);
+             }
             hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
             hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up') ? true : Math.random() < 0.3; const tex = is1Up ? 'mushroom_1up' : 'mushroom'; const mush = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', is1Up); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); } }
-            collectMushroom(player: any, mush: any) { if (!mush.active) return; const is1Up = mush.getData('is1Up'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (is1Up) { this.hearts++; this.show1Up(); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
-            collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; this.hearts++; this.show1Up(); } }
-
-            addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 10000) > Math.floor(oldScore / 10000)) { this.hearts++; this.show1Up(); } }
-            show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
-            hitEnemy(player: any, enemy: any) { if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); this.playVictorySound(); this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
+            collectMushroom(player: any, mush: any) { if (!mush.active) return; const is1Up = mush.getData('is1Up'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (is1Up) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
+             addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
+             show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
+             hitEnemy(player: any, enemy: any) { if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
 
             showHugAnimation() {
                // Both players run toward each other
@@ -1252,6 +1517,14 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                         const heart = this.add.text(hx, floorY - 20, '❤️', { fontSize: '24px' }).setDepth(100);
                         this.tweens.add({ targets: heart, y: floorY - 100, alpha: 0, duration: 1500, onComplete: () => heart.destroy() });
                      }});
+                     // Trigger custom save game event
+                     window.dispatchEvent(new CustomEvent('marioGameWon', {
+                        detail: {
+                           score: this.score,
+                           hearts: this.hearts,
+                           coinCount: this.coinCount
+                        }
+                     }));
                      // After celebration moment, show birthday
                      this.time.delayedCall(2500, () => this.showBirthdayCelebration());
                   }});
@@ -1260,7 +1533,11 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
             showBirthdayCelebration() {
                // Stop BGM
-               if (this.bgmInterval) window.clearInterval(this.bgmInterval);
+               if (this.currentBgm) {
+                  this.currentBgm.stop();
+                  this.currentBgm.destroy();
+                  this.currentBgm = null;
+               }
 
                // Dark overlay
                const overlay = this.add.rectangle(400, 240, 800, 480, 0x000000, 0.7).setScrollFactor(0).setDepth(50);
@@ -1441,6 +1718,19 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
                      if (!e.getData('cameraTriggered') && this.myPlayer.x > 4400 && this.level === 5 && !this.gameOver && !this.gameWon) {
                         e.setData('cameraTriggered', true);
                         e.setData('autoScrollActive', true);
+                         
+                        // Stop current level 5 BGM and play browsercontact track
+                        if (this.currentBgm) {
+                           this.currentBgm.stop();
+                           this.currentBgm.destroy();
+                           this.currentBgm = null;
+                        }
+                        try {
+                           this.currentBgm = this.sound.add('browsercontact', { loop: true, volume: 0.55 });
+                           this.currentBgm.play();
+                        } catch (err) {
+                           console.error('Error playing browsercontact BGM:', err);
+                        }
                      }
                      // Auto-scroll the camera slowly to the right
                      if (e.getData('autoScrollActive') && !this.gameOver && !this.gameWon) {
@@ -1474,7 +1764,7 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
 
                socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale });
                const timerDisplay = this.levelTimer >= 0 ? `⏱${Math.floor(this.levelTimer / 60)}:${(this.levelTimer % 60).toString().padStart(2, '0')}` : `⏱0:00`;
-               const heartsDisplay = this.hearts > 8 ? `❤️×${this.hearts}` : '❤️'.repeat(this.hearts);
+               const heartsDisplay = `❤️×${this.hearts}`;
                this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}`);
             }
          }
@@ -1543,13 +1833,40 @@ export default function PhaserGame({ role }: { role: 'p1' | 'p2' }) {
    return (
       <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'none' } as React.CSSProperties}>
          <div ref={gameRef} style={{ width: '100%', height: '100%' }} />
-         <div {...touchProps} style={{ position: 'absolute', left: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
+         {/* D-Pad */}
+         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
             <div /><button data-action="jump" style={btnStyle('rgba(60,60,200,0.82)')}>▲</button><div />
             <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
          </div>
-         <div {...touchProps} style={{ position: 'absolute', right: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
+         {/* JUMP action button on opposite side */}
+         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
             <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
          </div>
+         {/* Save Game Button popup on bottom right */}
+         {showSaveBtn && (
+            <button
+               onClick={handleSaveGame}
+               style={{
+                  position: 'absolute',
+                  right: 30,
+                  bottom: 120, // Positioned above D-pad / JUMP button
+                  padding: '12px 24px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #4caf50, #2e7d32)',
+                  color: '#fff',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  border: '3px solid rgba(255,255,255,0.4)',
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.6)',
+                  cursor: 'pointer',
+                  zIndex: 200,
+                  fontFamily: 'monospace',
+                  transition: 'all 0.2s'
+               }}
+            >
+               💾 SAVE GAME
+            </button>
+         )}
       </div>
    );
 }
