@@ -214,7 +214,8 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
 
             showGameOver() {
                if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
-               try { this.sound.play('mariodeath', { volume: sfxVolumeRef.current }); } catch (e) { console.error(e); }
+               if (this.sound && (this.sound as any).context && (this.sound as any).context.state === 'suspended') (this.sound as any).context.resume();
+               try { this.sound.play('mariodeath', { volume: musicVolumeRef.current }); } catch (e) { console.error(e); }
                this.add.rectangle(400, 240, 440, 220, 0x000000, 0.85).setDepth(200);
                this.add.text(400, 180, 'GAME OVER', { fontSize: '44px', color: '#ff0000', stroke: '#000', strokeThickness: 5, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
                this.add.text(400, 248, `SCORE: ${this.score}`, { fontSize: '26px', color: '#ffd700', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
@@ -266,31 +267,56 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
    const handleTouchStart = useCallback((e: React.TouchEvent) => {
       e.preventDefault();
       for (let i = 0; i < e.changedTouches.length; i++) {
-         const el = document.elementFromPoint(e.changedTouches[i].clientX, e.changedTouches[i].clientY) as HTMLElement | null;
+         const touch = e.changedTouches[i];
+         const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
          const action = el?.dataset?.action;
-         if (action) joyKeysRef.current[action as keyof typeof joyKeysRef.current] = true;
+         if (action) {
+            activeActionsRef.current.set(touch.identifier, action);
+            joyKeysRef.current[action as keyof typeof joyKeysRef.current] = true;
+         }
       }
    }, []);
-   const handleTouchMove = useCallback((e: React.TouchEvent) => { e.preventDefault(); }, []);
+   const handleTouchMove = useCallback((e: React.TouchEvent) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+         const touch = e.changedTouches[i];
+         const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
+         const newAction = el?.dataset?.action || '';
+         const prevAction = activeActionsRef.current.get(touch.identifier) || '';
+         if (newAction && newAction !== prevAction) {
+            if (prevAction) joyKeysRef.current[prevAction as keyof typeof joyKeysRef.current] = false;
+            joyKeysRef.current[newAction as keyof typeof joyKeysRef.current] = true;
+            activeActionsRef.current.set(touch.identifier, newAction);
+         }
+      }
+   }, []);
    const handleTouchEnd = useCallback((e: React.TouchEvent) => {
       e.preventDefault();
-      joyKeysRef.current.left = false; joyKeysRef.current.right = false; joyKeysRef.current.jump = false;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+         const touch = e.changedTouches[i];
+         const prevAction = activeActionsRef.current.get(touch.identifier);
+         if (prevAction) {
+            joyKeysRef.current[prevAction as keyof typeof joyKeysRef.current] = false;
+            activeActionsRef.current.delete(touch.identifier);
+         }
+      }
    }, []);
+   const activeActionsRef = useRef<Map<number, string>>(new Map());
    const touchProps = { onTouchStart: handleTouchStart, onTouchMove: handleTouchMove, onTouchEnd: handleTouchEnd, onTouchCancel: handleTouchEnd };
 
-   const btnStyle: React.CSSProperties = { width: 56, height: 56, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', userSelect: 'none' };
+   const btnStyle: React.CSSProperties = { width: 64, height: 64, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 22, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none', userSelect: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' };
 
    return (
-      <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', touchAction: 'none' }}>
+      <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' } as React.CSSProperties}>
          <div ref={gameRef} style={{ width: '100%', height: '100%' }} />
-         {/* D-Pad on chosen side */}
-         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 20, bottom: 20, display: 'flex', gap: 10, zIndex: 10 }}>
-            <button data-action="left" style={btnStyle}>◀</button>
-            <button data-action="right" style={btnStyle}>▶</button>
+         {/* D-Pad - same layout as main game */}
+         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
+            <div /><button data-action="jump" style={btnStyle}>▲</button><div />
+            <button data-action="left" style={btnStyle}>◀</button><div /><button data-action="right" style={btnStyle}>▶</button>
          </div>
          {/* JUMP on opposite side */}
-         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 20, bottom: 20, zIndex: 10 }}>
-            <button data-action="jump" style={{ ...btnStyle, width: 68, height: 68, background: 'rgba(210,30,30,0.88)', fontSize: 14, fontWeight: 'bold' }}>JUMP</button>
+         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
+            <button data-action="jump" style={{ ...btnStyle, width: 72, height: 72, fontSize: 15, background: 'rgba(210,30,30,0.88)' }}>JUMP</button>
          </div>
       </div>
    );

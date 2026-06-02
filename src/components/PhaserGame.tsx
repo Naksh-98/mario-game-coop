@@ -291,7 +291,8 @@ export default function PhaserGame({
 
             playGameOverSound() {
                if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
-               try { this.sound.play('mariodeath', { volume: sfxVolumeRef.current }); } catch (e) { console.error(e); }
+               if (this.sound && (this.sound as any).context && (this.sound as any).context.state === 'suspended') (this.sound as any).context.resume();
+               try { this.sound.play('mariodeath', { volume: musicVolumeRef.current }); } catch (e) { console.error(e); }
             }
 
             startBGM() {
