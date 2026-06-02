@@ -901,7 +901,7 @@ export default function PhaserGame({
                });
 
                socket.on('loadLevel', (lvl: number) => { this.level = lvl; this.gameWon = false; this.generateLevel(this.level); });
-               socket.on('gameOver', () => { this.gameOver = true; });
+               socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
 
                this.startBGM();
                this.generateLevel(this.level);
@@ -1005,7 +1005,7 @@ export default function PhaserGame({
                if (lvl === 1) {
                   this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
                   [[180, 1], [500, 1.4], [1900, 1], [3600, 1.2], [5600, 0.9]].forEach(([hx, sc]) => this.add.image(hx as number, GY - 22, 'hill').setScale(sc as number).setDepth(-3).setData('decoration', true));
-                  for (let x = 0; x < 8500; x += B) { this.blocks.create(x + B / 2, GY, 'block'); this.blocks.create(x + B / 2, GY2, 'block'); }
+                  for (let x = 0; x < 8500; x += B) { if (!(x >= 2000 && x < 2000 + B * 3)) { this.blocks.create(x + B / 2, GY, 'block'); this.blocks.create(x + B / 2, GY2, 'block'); } }
                   addPipe(480, 2); addPipe(1260, 3); addPipe(2300, 2);
                   const BH = GY - 4 * B; [736, 800, 864, 928].forEach((bx, i) => { if (i === 1 || i === 2) { const qb = this.qBlocks.create(bx, BH, 'qblock'); qb.setData('active', true); } else this.blocks.create(bx, BH, 'block'); });
                   [1600, 1664, 1728].forEach(bx => { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); });
@@ -1712,8 +1712,18 @@ export default function PhaserGame({
                if (!autoScrolling) this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 9600);
                if (this.myPlayer.x < this.cameras.main.scrollX + 10) this.myPlayer.x = this.cameras.main.scrollX + 10;
 
-               // Instant death if player falls to the bottom of the screen
-               if (this.myPlayer.y > 470 && !this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.myPlayer); }
+               // Instant death if player falls into a pit (below ground level GY=440)
+               if (this.myPlayer.y >= 455 && !this.gameOver) {
+                  // Check if there's ground below the player — if not, it's a pit
+                  const playerX = this.myPlayer.x;
+                  const hasGround = this.blocks.getChildren().some((b: any) => Math.abs(b.x - playerX) < 20 && b.y >= 430 && b.y <= 480);
+                  if (!hasGround) {
+                     this.hearts = 0; this.gameOver = true; socket.emit('gameOver');
+                     this.myPlayer.y = 300;
+                     this.playGameOverSound();
+                     this.deathAnimation(this.myPlayer);
+                  }
+               }
 
                // Show Bowser health bar when he's visible on screen
                this.enemies.getChildren().forEach((e: any) => {
