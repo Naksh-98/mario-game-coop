@@ -701,10 +701,10 @@ export default function PhaserGame({
             create() {
                this.audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
                // Resume AudioContext on user interaction (required for mobile browsers in production)
-               const resumeAudio = () => { if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume(); };
-               document.addEventListener('pointerdown', resumeAudio, { once: false });
-               document.addEventListener('touchstart', resumeAudio, { once: false });
-               document.addEventListener('keydown', resumeAudio, { once: false });
+               const resumeCtx = () => { if (this.audioCtx && this.audioCtx.state === 'suspended') this.audioCtx.resume(); };
+               document.addEventListener('pointerdown', resumeCtx, { once: false });
+               document.addEventListener('touchstart', resumeCtx, { once: false });
+               document.addEventListener('keydown', resumeCtx, { once: false });
                
                // Initialize stats from React props closure
                this.hearts = initialHearts;
