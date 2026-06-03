@@ -188,6 +188,7 @@ export default function PhaserGame({
                this.load.audio('jump', '/audio/Super+Mario+-+Jump+(Sound+Effect).mp3');
                this.load.audio('killedbrowser', '/audio/killedbrowser.mp3');
                this.load.audio('bowserfire', '/audio/Super_Mario_Bros_Bowser fire.mp3');
+               this.load.audio('level6', '/audio/level6.mp3');
             }
 
             playAudio(freq: number, type: OscillatorType, dur: number, ramp = true) {
@@ -261,6 +262,7 @@ export default function PhaserGame({
                else if (this.level === 3) key = 'level3';
                else if (this.level === 4) key = 'level4';
                else if (this.level === 5) key = 'level5';
+               else if (this.level >= 6) key = 'level6';
                if (key) {
                   try {
                      this.currentBgm = this.sound.add(key, { loop: true, volume: musicVolumeRef.current });
