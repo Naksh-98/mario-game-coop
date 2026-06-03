@@ -886,7 +886,12 @@ export default function PhaserGame({
                         this.playAudio(784, 'square', 0.1); setTimeout(() => this.playAudio(880, 'square', 0.1), 100); setTimeout(() => this.playAudio(988, 'square', 0.1), 200); setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
                         this.tweens.add({ targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
                            this.countdownText.setAlpha(0); this.countingDown = false; this.waitingForOther = false; this.finishedSet.clear(); this.level = nextLvl; this.gameWon = false;
-                           this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0); this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+                           // For level 4 (pillar platforming), spawn from the sky to land on first pillar
+                           if (nextLvl === 4) {
+                              this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0); this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
+                           } else {
+                              this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0); this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+                           }
                            this.cameraCenter.setPosition(400, 240); this.cameras.main.scrollX = 0;
                            this.generateLevel(this.level);
                         }});
@@ -1250,6 +1255,13 @@ export default function PhaserGame({
                   // End pillar with flag ON the surface
                   addPillar(5800, 340, 5);
                   this.flags.create(5900, 340 - 80, 'flag');
+
+                  // Spawn both players from the sky so they land on the first pillar
+                  // First pillar is at x=80, topY=390, width=4 blocks
+                  if (this.p1 && this.p2) {
+                     this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0);
+                     this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
+                  }
 
                } else {
                   // Level 5 - Lava/Boss Level (Bowser fight)
