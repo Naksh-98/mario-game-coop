@@ -187,6 +187,7 @@ export default function PhaserGame({
                this.load.audio('coin', '/audio/mario_coin_sound.mp3');
                this.load.audio('jump', '/audio/Super+Mario+-+Jump+(Sound+Effect).mp3');
                this.load.audio('killedbrowser', '/audio/killedbrowser.mp3');
+               this.load.audio('bowserfire', '/audio/Super_Mario_Bros_Bowser fire.mp3');
             }
 
             playAudio(freq: number, type: OscillatorType, dur: number, ramp = true) {
@@ -1038,6 +1039,7 @@ export default function PhaserGame({
                         (fb.body as any).allowGravity = false;
                         fb.setVelocityX(velX);
                         if (!fireLeft) fb.setFlipX(true);
+                        try { this.sound.play('bowserfire', { volume: sfxVolumeRef.current * 0.8 }); } catch (e) {}
                         this.time.delayedCall(4000, () => { if (fb && fb.active) fb.destroy(); });
                         this.time.delayedCall(2000, bowserFire);
                      };
@@ -1221,13 +1223,12 @@ export default function PhaserGame({
                      case 'green_pipe_4': {
                         const segs = obj.properties?.height || obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
                         const piranha = obj.properties?.hasPiranha || false;
-                        const isPurple = false;
-                        const bodyTex = 'pipe_body';
                         const capTex = 'pipe_cap';
-                        // Place cap at stored position, body segments below
+                        const bodyTex = 'pipe_body';
+                        // Place cap at top, body segments immediately below (no gap)
                         (this.blocks.create(x, y, capTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
                         for (let s = 1; s < segs; s++) {
-                           (this.blocks.create(x, y + s * B, bodyTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                           (this.blocks.create(x, y + 9 + (s - 1) * B + B / 2, bodyTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
                         }
                         if (piranha) {
                            const topY = y - 20;
@@ -1243,11 +1244,11 @@ export default function PhaserGame({
                      case 'purple_pipe_4': {
                         const segs = obj.properties?.height || obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
                         const piranha = obj.properties?.hasPiranha || false;
-                        const bodyTex2 = 'purple_pipe_body';
                         const capTex2 = 'purple_pipe_cap';
+                        const bodyTex2 = 'purple_pipe_body';
                         (this.blocks.create(x, y, capTex2) as Phaser.Physics.Arcade.Sprite).setDepth(2);
                         for (let s = 1; s < segs; s++) {
-                           (this.blocks.create(x, y + s * B, bodyTex2) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                           (this.blocks.create(x, y + 9 + (s - 1) * B + B / 2, bodyTex2) as Phaser.Physics.Arcade.Sprite).setDepth(2);
                         }
                         if (piranha) {
                            const topY = y - 20;
@@ -1702,7 +1703,7 @@ export default function PhaserGame({
                this.playVictorySound();
             }
             createJoystick() {}
-            takeDamage(player: any) { if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
             deathAnimation(player: any) {
                player.setVelocity(0, 0); (player.body as any).allowGravity = false;
@@ -1805,7 +1806,7 @@ export default function PhaserGame({
                }
                if (animState !== 'run') this.myPlayer.setTexture(`${role}_${animState}`);
 
-               const targetX = this.p1.x;
+               const targetX = Math.max(Math.min(this.p1.x, this.p2.x) + 300, this.cameras.main.scrollX + 400);
                // Don't override camera during boss auto-scroll
                let autoScrolling = false;
                this.enemies.getChildren().forEach((e: any) => { if (e.getData && e.getData('isBoss') && e.getData('autoScrollActive')) autoScrolling = true; if (e.getData && e.getData('isBoss') && e.getData('arenaLocked')) autoScrolling = true; });
