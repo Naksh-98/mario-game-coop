@@ -148,11 +148,5 @@ export function validateAll(objects: PlacedObject[], name: string): ValidationEr
     errors.push({ message: spawnResult.error });
   }
 
-  // Validate castle position
-  const castleResult = validateCastlePosition(objects);
-  if (!castleResult.valid && castleResult.error) {
-    errors.push({ message: castleResult.error });
-  }
-
   return errors;
 }

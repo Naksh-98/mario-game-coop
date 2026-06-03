@@ -556,27 +556,23 @@ export default function PhaserGame({
                }
 
                if (lvl >= 6) {
+                  // First check localStorage
                   const savedLevel = getLevelBySlot(lvl);
                   if (savedLevel) {
                      this.generateCustomLevel(savedLevel.data);
                      return;
                   }
-                  this.add.rectangle(400, 240, 800, 480, 0x1a1a2e).setScrollFactor(0).setDepth(-10).setData('decoration', true);
-                  this.add.text(400, 200, `LEVEL ${lvl}\nCOMING SOON!`, { fontSize: "40px", color: "#ffd700", fontStyle: "bold", align: "center", stroke: "#000", strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
-                  this.add.text(400, 300, "You successfully loaded your save game!\nStay tuned for the next update.", { fontSize: "18px", color: "#ffffff", align: "center", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
-                  if (this.p1 && this.p2) {
-                     this.p1.setPosition(300, 240);
-                     this.p2.setPosition(500, 240);
-                     (this.p1.body as any).allowGravity = false;
-                     (this.p2.body as any).allowGravity = false;
-                     this.p1.setVelocity(0, 0);
-                     this.p2.setVelocity(0, 0);
-                  }
-                  if (this.currentBgm) {
-                     this.currentBgm.stop();
-                     this.currentBgm.destroy();
-                     this.currentBgm = null;
-                  }
+                  // Then try loading from public/levels/ static files
+                  fetch('/api/list-levels').then(r => r.json()).then(({ levels }) => {
+                     const fileLvl = levels?.find((l: any) => l.slotNumber === lvl);
+                     if (fileLvl) {
+                        fetch(`/levels/${fileLvl.fileName}`).then(r => r.json()).then((data: any) => {
+                           this.generateCustomLevel(data as LevelData);
+                        }).catch(() => this.showComingSoon(lvl));
+                     } else {
+                        this.showComingSoon(lvl);
+                     }
+                  }).catch(() => this.showComingSoon(lvl));
                   return;
                }
 
@@ -1076,6 +1072,21 @@ export default function PhaserGame({
                }});
             }
 
+            showComingSoon(lvl: number) {
+               this.add.rectangle(400, 240, 800, 480, 0x1a1a2e).setScrollFactor(0).setDepth(-10).setData('decoration', true);
+               this.add.text(400, 200, `LEVEL ${lvl}\nCOMING SOON!`, { fontSize: "40px", color: "#ffd700", fontStyle: "bold", align: "center", stroke: "#000", strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
+               this.add.text(400, 300, "Create new levels in the Level Editor!", { fontSize: "18px", color: "#ffffff", align: "center", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
+               if (this.p1 && this.p2) {
+                  this.p1.setPosition(300, 240);
+                  this.p2.setPosition(500, 240);
+                  (this.p1.body as any).allowGravity = false;
+                  (this.p2.body as any).allowGravity = false;
+                  this.p1.setVelocity(0, 0);
+                  this.p2.setVelocity(0, 0);
+               }
+               if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
+            }
+
             generateCustomLevel(levelData: LevelData) {
                // Clear existing level objects (same pattern as generateLevel)
                this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true);
@@ -1148,8 +1159,11 @@ export default function PhaserGame({
 
                // Process each object from levelData
                for (const obj of levelData.objects) {
+                  // Convert editor grid position to game pixel position
+                  // Editor canvas is 440px visible (rows 0-13), game is 480px
+                  // Add 40px offset so editor bottom aligns with game ground area
                   const x = obj.col * B + B / 2;
-                  const y = obj.row * B + B / 2;
+                  const y = obj.row * B + B / 2 + 40;
                   const objWidth = obj.properties?.width ?? 1;
                   const objHeight = obj.properties?.height ?? 1;
 
@@ -1205,17 +1219,43 @@ export default function PhaserGame({
                      case 'green_pipe_2':
                      case 'green_pipe_3':
                      case 'green_pipe_4': {
-                        const segs = obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
+                        const segs = obj.properties?.height || obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
                         const piranha = obj.properties?.hasPiranha || false;
-                        addPipe(x, segs, piranha, false);
+                        const isPurple = false;
+                        const bodyTex = 'pipe_body';
+                        const capTex = 'pipe_cap';
+                        // Place cap at stored position, body segments below
+                        (this.blocks.create(x, y, capTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                        for (let s = 1; s < segs; s++) {
+                           (this.blocks.create(x, y + s * B, bodyTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                        }
+                        if (piranha) {
+                           const topY = y - 20;
+                           const hiddenY = y + 4;
+                           const pl = this.piranhas.create(x, hiddenY, 'piranha') as Phaser.Physics.Arcade.Sprite;
+                           (pl.body as any).allowGravity = false; pl.setDepth(1);
+                           this.tweens.add({ targets: pl, y: topY, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 900) });
+                        }
                         break;
                      }
                      case 'purple_pipe_2':
                      case 'purple_pipe_3':
                      case 'purple_pipe_4': {
-                        const segs = obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
+                        const segs = obj.properties?.height || obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
                         const piranha = obj.properties?.hasPiranha || false;
-                        addPipe(x, segs, piranha, true);
+                        const bodyTex2 = 'purple_pipe_body';
+                        const capTex2 = 'purple_pipe_cap';
+                        (this.blocks.create(x, y, capTex2) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                        for (let s = 1; s < segs; s++) {
+                           (this.blocks.create(x, y + s * B, bodyTex2) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                        }
+                        if (piranha) {
+                           const topY = y - 20;
+                           const hiddenY = y + 4;
+                           const pl = this.piranhas.create(x, hiddenY, 'piranha') as Phaser.Physics.Arcade.Sprite;
+                           (pl.body as any).allowGravity = false; pl.setDepth(1);
+                           this.tweens.add({ targets: pl, y: topY, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 900) });
+                        }
                         break;
                      }
                      case 'goomba':
@@ -1537,12 +1577,13 @@ export default function PhaserGame({
                 osc3.start(now + 0.04); osc3.stop(now + 0.12);
              }
             hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
-            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up') ? true : Math.random() < 0.3; const tex = is1Up ? 'mushroom_1up' : 'mushroom'; const mush = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', is1Up); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); } }
-            collectMushroom(player: any, mush: any) { if (!mush.active) return; const is1Up = mush.getData('is1Up'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (is1Up) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up'); if (is1Up) { const mush = this.mushrooms.create(block.x, block.y - 28, 'mushroom_1up') as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', true); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); return; } const roll = Math.random(); let tex: string; let itemType: string; if (roll < 0.30) { tex = 'power_mushroom'; itemType = 'power'; } else if (roll < 0.45) { tex = 'poison_mushroom'; itemType = 'poison'; } else if (roll < 0.65) { tex = 'invincibility_star'; itemType = 'star'; } else if (roll < 0.80) { tex = 'fire_flower'; itemType = 'fire_flower'; } else { tex = 'mushroom'; itemType = 'power'; } const item = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; item.setData('itemType', itemType); item.setVelocityX(itemType === 'star' ? 120 : 80); item.setBounceX(1); item.setCollideWorldBounds(true); if (itemType === 'star') { item.setBounceY(0.8); } } }
+            collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (itemType === '1up') { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.activateStarPower(player); } else if (itemType === 'fire_flower') { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); player.setTint(0xff8800); this.time.delayedCall(500, () => player.clearTint()); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            activateStarPower(player: any) { player.setData('starPower', true); const colors = [0xff0000, 0xffff00, 0x00ff00, 0x00ffff, 0xff00ff, 0xffffff]; let colorIdx = 0; const glitterEvent = this.time.addEvent({ delay: 80, loop: true, callback: () => { if (!player.active) return; player.setTint(colors[colorIdx % colors.length]); colorIdx++; } }); player.setData('glitterEvent', glitterEvent); this.time.delayedCall(30000, () => { player.setData('starPower', false); player.clearTint(); if (glitterEvent) glitterEvent.destroy(); }); }
             collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
-             hitEnemy(player: any, enemy: any) { if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
+             hitEnemy(player: any, enemy: any) { if (player.getData('starPower')) { enemy.destroy(); this.playStompSound(); this.addScore(1000); return; } if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
 
             showHugAnimation() {
                // Both players run toward each other
@@ -1764,7 +1805,7 @@ export default function PhaserGame({
                }
                if (animState !== 'run') this.myPlayer.setTexture(`${role}_${animState}`);
 
-               const targetX = Math.max(Math.min(this.p1.x, this.p2.x) + 300, this.cameras.main.scrollX + 400);
+               const targetX = this.p1.x;
                // Don't override camera during boss auto-scroll
                let autoScrolling = false;
                this.enemies.getChildren().forEach((e: any) => { if (e.getData && e.getData('isBoss') && e.getData('autoScrollActive')) autoScrolling = true; if (e.getData && e.getData('isBoss') && e.getData('arenaLocked')) autoScrolling = true; });

@@ -113,9 +113,7 @@ const DEFAULT_PROPERTIES: Record<string, ObjectProperties> = {
   purple_pipe_4: { hasPiranha: false, pipeHeight: 4 },
 };
 
-// Total canvas pixel width
-const TOTAL_CANVAS_WIDTH = CANVAS_COLS * GRID_SIZE; // 8512
-const MAX_SCROLL_X = TOTAL_CANVAS_WIDTH - VIEWPORT_WIDTH; // 8512 - 640 = 7872
+// Total canvas pixel width — no upper limit, scroll as far as you want
 const SCROLL_STEP = GRID_SIZE; // 32px per tick
 
 /**
@@ -712,7 +710,7 @@ export default class LevelEditorScene extends Phaser.Scene {
   }
 
   private scrollCanvas(delta: number): void {
-    this.scrollX = Phaser.Math.Clamp(this.scrollX + delta, 0, MAX_SCROLL_X);
+    this.scrollX = Math.max(0, this.scrollX + delta);
     this.positionText.setText(`X: ${this.scrollX}`);
     this.drawGrid();
     this.renderObjects();
@@ -1622,10 +1620,23 @@ export default class LevelEditorScene extends Phaser.Scene {
       saveLevel(entry);
       this.currentLevelId = id;
       this.isDirty = false;
-      this.showSuccessMessage('Level saved successfully!');
+
+      // Also save to file (public/levels/) via server API — works in dev only
+      fetch('/api/save-level', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(levelData),
+      }).then(res => res.json()).then(result => {
+        if (result.success) {
+          this.showSuccessMessage(`Saved to file: ${result.fileName}`);
+        } else {
+          this.showSuccessMessage('Saved to localStorage (file save unavailable)');
+        }
+      }).catch(() => {
+        this.showSuccessMessage('Saved to localStorage');
+      });
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'QuotaExceededError') {
-        // Offer file download fallback
         downloadAsFile(levelData);
         this.showSuccessMessage('Storage full — downloaded as file.');
       } else {
