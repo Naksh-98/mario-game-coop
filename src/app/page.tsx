@@ -21,7 +21,7 @@ function loadSettings(): GameSettings {
 }
 
 export default function Home() {
-  const [role, setRole] = useState<'p1' | 'p2' | 'mini' | null>(null);
+  const [role, setRole] = useState<'p1' | 'p2' | 'mini' | 'editor' | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [blinkOn, setBlinkOn] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
@@ -121,13 +121,15 @@ export default function Home() {
     }
     triggerAudioPlay();
     if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-      playCoinSound(); setSelectedIndex(i => (i === 0 ? 4 : i - 1));
+      playCoinSound(); setSelectedIndex(i => (i === 0 ? 5 : i - 1));
     } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-      playCoinSound(); setSelectedIndex(i => (i === 4 ? 0 : i + 1));
+      playCoinSound(); setSelectedIndex(i => (i === 5 ? 0 : i + 1));
     } else if (e.key === 'Enter' || e.key === ' ') {
       if (selectedIndex === 3) {
-        handleLoadSaveGame();
+        setRole('editor');
       } else if (selectedIndex === 4) {
+        handleLoadSaveGame();
+      } else if (selectedIndex === 5) {
         setShowSettings(true);
       } else {
         setRole(selectedIndex === 0 ? 'p1' : selectedIndex === 1 ? 'p2' : 'mini');
@@ -341,12 +343,23 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Load Save Game */}
+            {/* Level Editor */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 3 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(3); handleLoadSaveGame(); }}
-                style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 3 ? '#2e7d32' : '#1b5e20', color: 'white', border: selectedIndex === 3 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
+                onClick={() => { playCoinSound(); setSelectedIndex(3); setRole('editor'); }}
+                style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 3 ? '#1565c0' : '#0d47a1', color: 'white', border: selectedIndex === 3 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
+              >
+                🎨 LEVEL EDITOR
+              </div>
+            </div>
+
+            {/* Load Save Game */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 4 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
+              <div
+                onClick={() => { playCoinSound(); setSelectedIndex(4); handleLoadSaveGame(); }}
+                style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 4 ? '#2e7d32' : '#1b5e20', color: 'white', border: selectedIndex === 4 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 {loadedSave ? `💾 LOADED (LVL ${loadedSave.level})` : '💾 LOAD SAVE GAME'}
               </div>
@@ -354,10 +367,10 @@ export default function Home() {
 
             {/* Settings */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 4 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
+              <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 5 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(4); setShowSettings(true); }}
-                style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 4 ? '#555555' : '#222222', color: 'white', border: selectedIndex === 4 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
+                onClick={() => { playCoinSound(); setSelectedIndex(5); setShowSettings(true); }}
+                style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 5 ? '#555555' : '#222222', color: 'white', border: selectedIndex === 5 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 ⚙️ SETTINGS
               </div>
@@ -375,17 +388,19 @@ export default function Home() {
         {/* Mobile D-pad */}
         <div style={{ position: 'absolute', [settings.btnPos === 'left' ? 'left' : 'right']: 30, bottom: 20, display: 'grid', gridTemplateColumns: 'repeat(3, 60px)', gridTemplateRows: 'repeat(2, 60px)', zIndex: 20 }}>
           <div />
-          <button onPointerDown={() => { playCoinSound(); setSelectedIndex(i => (i === 0 ? 4 : i - 1)); }} style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>▲</button>
+          <button onPointerDown={() => { playCoinSound(); setSelectedIndex(i => (i === 0 ? 5 : i - 1)); }} style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>▲</button>
           <div />
           <div />
-          <button onPointerDown={() => { playCoinSound(); setSelectedIndex(i => (i === 4 ? 0 : i + 1)); }} style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>▼</button>
+          <button onPointerDown={() => { playCoinSound(); setSelectedIndex(i => (i === 5 ? 0 : i + 1)); }} style={{ width: 56, height: 56, borderRadius: '50%', background: 'rgba(60,60,200,0.82)', border: '3px solid rgba(255,255,255,0.35)', color: '#fff', fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none' }}>▼</button>
           <div />
         </div>
         <button
           onPointerDown={() => {
             if (selectedIndex === 3) {
-              handleLoadSaveGame();
+              setRole('editor');
             } else if (selectedIndex === 4) {
+              handleLoadSaveGame();
+            } else if (selectedIndex === 5) {
               setShowSettings(true);
             } else {
               setRole(selectedIndex === 0 ? 'p1' : selectedIndex === 1 ? 'p2' : 'mini');
@@ -400,6 +415,20 @@ export default function Home() {
             <div key={i} style={{ width: 32, height: 32, backgroundColor: i % 7 === 0 ? '#a0522d' : '#c84c0c', border: '1px solid #7c3800', flexShrink: 0 }} />
           ))}
         </div>
+      </main>
+    );
+  }
+
+  if (role === 'editor') {
+    return (
+      <main style={{ width: '100vw', height: '100dvh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#222', margin: 0, padding: 0, position: 'relative' }}>
+        <PhaserGame
+          role={'editor'}
+          onExit={() => setRole(null)}
+          musicVolume={settings.musicVol}
+          sfxVolume={settings.sfxVol}
+          btnPos={settings.btnPos}
+        />
       </main>
     );
   }

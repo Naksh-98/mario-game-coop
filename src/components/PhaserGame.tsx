@@ -2,6 +2,10 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { createTextures as createAllTextures } from '@/lib/textureFactory';
+import LevelEditorScene from '@/scenes/LevelEditorScene';
+import { getLevelBySlot } from '@/lib/levelStorage';
+import type { LevelData, PlacedObject } from '@/lib/levelData';
 
 export default function PhaserGame({
    role,
@@ -11,9 +15,10 @@ export default function PhaserGame({
    initialLevel = 1,
    initialScore = 0,
    initialHearts = 3,
-   initialCoins = 0
+   initialCoins = 0,
+   onExit
 }: {
-   role: 'p1' | 'p2';
+   role: 'p1' | 'p2' | 'editor';
    musicVolume?: number;
    sfxVolume?: number;
    btnPos?: 'left' | 'right';
@@ -21,6 +26,7 @@ export default function PhaserGame({
    initialScore?: number;
    initialHearts?: number;
    initialCoins?: number;
+   onExit?: () => void;
 }) {
    const gameRef = useRef<HTMLDivElement>(null);
    // Shared joy-keys object — React buttons write here, Phaser reads here
@@ -78,6 +84,38 @@ export default function PhaserGame({
 
       let isDestroyed = false;
       let game: any;
+
+      // --- EDITOR MODE: skip socket, use LevelEditorScene ---
+      if (role === 'editor') {
+         import('phaser').then((ph) => {
+            if (isDestroyed) return;
+            const Phaser = ph.default || ph;
+
+            const editorConfig: Phaser.Types.Core.GameConfig = {
+               type: Phaser.AUTO,
+               scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 800, height: 480 },
+               parent: gameRef.current!,
+               physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
+               scene: [LevelEditorScene],
+               backgroundColor: '#2c2c2c',
+            };
+            game = new Phaser.Game(editorConfig);
+            // Pass onExit to the scene via scene init data
+            game.scene.start('LevelEditorScene', { onExit: () => {
+               if (game) { game.destroy(true); game = null; }
+               onExit?.();
+            }});
+         });
+
+         return () => {
+            isDestroyed = true;
+            if (game) { game.destroy(true); game = null; }
+            document.removeEventListener('selectstart', preventSelect);
+            document.removeEventListener('contextmenu', preventSelect);
+         };
+      }
+
+      // --- GAMEPLAY MODE (p1/p2): use socket + MainScene ---
       const socket: Socket = io();
 
       import('phaser').then((ph) => {
@@ -131,6 +169,7 @@ export default function PhaserGame({
             countdownText!: Phaser.GameObjects.Text;
             finishedSet: Set<string> = new Set();
             castleX = 0;
+            playingCustomFromLibrary = false;
 
             constructor() {
                super({ key: 'MainScene' });
@@ -148,89 +187,6 @@ export default function PhaserGame({
                this.load.audio('coin', '/audio/mario_coin_sound.mp3');
                this.load.audio('jump', '/audio/Super+Mario+-+Jump+(Sound+Effect).mp3');
                this.load.audio('killedbrowser', '/audio/killedbrowser.mp3');
-            }
-
-            drawPlayer(key: string, shirtCol: number, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
-               const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
-               const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
-
-               if (frameType === 'crouch') {
-                  g.fillStyle(hat); g.fillRect(3 * p, 6 * p, 6 * p, 2 * p); g.fillStyle(skin); g.fillRect(3 * p, 8 * p, 6 * p, 3 * p);
-                  g.fillStyle(shirtCol); g.fillRect(2 * p, 11 * p, 8 * p, 3 * p); g.fillStyle(overalls); g.fillRect(3 * p, 14 * p, 6 * p, 2 * p);
-                  g.fillStyle(shoes); g.fillRect(1 * p, 15 * p, 4 * p, 2 * p); g.fillRect(7 * p, 15 * p, 4 * p, 2 * p);
-                  g.generateTexture(key, 13 * p, 17 * p); g.destroy(); return;
-               }
-
-               g.fillStyle(hat); g.fillRect(3 * p, 0 * p, 5 * p, 2 * p); g.fillRect(2 * p, 2 * p, 7 * p, 1 * p);
-               g.fillStyle(skin); g.fillRect(3 * p, 3 * p, 6 * p, 4 * p);
-               g.fillStyle(0x000000); g.fillRect(7 * p, 4 * p, 1 * p, 1 * p); g.fillRect(7 * p, 6 * p, 2 * p, 1 * p);
-               g.fillStyle(shirtCol); g.fillRect(3 * p, 7 * p, 6 * p, 3 * p);
-               g.fillStyle(overalls); g.fillRect(4 * p, 9 * p, 4 * p, 4 * p); g.fillRect(3 * p, 10 * p, 1 * p, 3 * p); g.fillRect(8 * p, 10 * p, 1 * p, 3 * p);
-
-               g.fillStyle(shirtCol);
-               if (frameType === 'jump') { g.fillRect(1 * p, 4 * p, 2 * p, 4 * p); g.fillRect(9 * p, 6 * p, 2 * p, 3 * p); g.fillStyle(skin); g.fillRect(1 * p, 2 * p, 2 * p, 2 * p); g.fillRect(9 * p, 9 * p, 2 * p, 2 * p); }
-               else if (frameType === 'run1') { g.fillRect(2 * p, 8 * p, 2 * p, 3 * p); g.fillRect(8 * p, 8 * p, 3 * p, 2 * p); g.fillStyle(skin); g.fillRect(2 * p, 11 * p, 2 * p, 2 * p); g.fillRect(11 * p, 8 * p, 2 * p, 2 * p); }
-               else { g.fillRect(1 * p, 8 * p, 3 * p, 2 * p); g.fillRect(9 * p, 8 * p, 2 * p, 3 * p); g.fillStyle(skin); g.fillRect(0 * p, 8 * p, 2 * p, 2 * p); g.fillRect(9 * p, 11 * p, 2 * p, 2 * p); }
-
-               g.fillStyle(overalls);
-               if (frameType === 'jump') { g.fillRect(2 * p, 13 * p, 3 * p, 2 * p); g.fillRect(7 * p, 12 * p, 3 * p, 2 * p); g.fillStyle(shoes); g.fillRect(1 * p, 15 * p, 3 * p, 2 * p); g.fillRect(8 * p, 13 * p, 3 * p, 2 * p); }
-               else if (frameType === 'run1') { g.fillRect(3 * p, 13 * p, 2 * p, 2 * p); g.fillRect(7 * p, 13 * p, 3 * p, 2 * p); g.fillStyle(shoes); g.fillRect(2 * p, 15 * p, 3 * p, 2 * p); g.fillRect(7 * p, 15 * p, 4 * p, 2 * p); }
-               else { g.fillRect(2 * p, 12 * p, 4 * p, 2 * p); g.fillRect(7 * p, 13 * p, 2 * p, 2 * p); g.fillStyle(shoes); g.fillRect(1 * p, 13 * p, 3 * p, 2 * p); g.fillRect(7 * p, 15 * p, 3 * p, 2 * p); }
-
-               g.generateTexture(key, 13 * p, 17 * p); g.destroy();
-            }
-
-            drawPrincess(key: string, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
-               const skin = 0xffdab9; const hair = 0xffe066; const dress = 0xffb6c1; const trim = 0xff1493;
-               const crown = 0xffd700; const jewel = 0x00bfff; const shoes = 0xe52458; const legs = 0xffffff;
-               const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
-
-               if (frameType === 'crouch') {
-                  g.fillStyle(crown); g.fillRect(4 * p, 5 * p, 5 * p, 1 * p);
-                  g.fillStyle(jewel); g.fillRect(6 * p, 5 * p, 1 * p, 1 * p);
-                  g.fillStyle(hair); g.fillRect(3 * p, 6 * p, 7 * p, 4 * p);
-                  g.fillStyle(skin); g.fillRect(4 * p, 7 * p, 5 * p, 3 * p);
-                  g.fillStyle(dress); g.fillRect(2 * p, 10 * p, 9 * p, 7 * p);
-                  g.fillStyle(trim); g.fillRect(2 * p, 15 * p, 9 * p, 2 * p);
-                  g.generateTexture(key, 13 * p, 17 * p); g.destroy(); return;
-               }
-
-               g.fillStyle(crown); g.fillRect(5 * p, 0 * p, 3 * p, 1 * p); g.fillRect(4 * p, 1 * p, 5 * p, 1 * p);
-               g.fillStyle(jewel); g.fillRect(6 * p, 1 * p, 1 * p, 1 * p);
-               g.fillStyle(hair); g.fillRect(3 * p, 2 * p, 7 * p, 7 * p);
-               g.fillRect(2 * p, 4 * p, 1 * p, 9 * p); g.fillRect(10 * p, 4 * p, 1 * p, 9 * p);
-               g.fillRect(1 * p, 6 * p, 1 * p, 5 * p); g.fillRect(11 * p, 6 * p, 1 * p, 5 * p);
-               g.fillStyle(skin); g.fillRect(4 * p, 3 * p, 5 * p, 5 * p);
-               g.fillStyle(0x000000); g.fillRect(7 * p, 4 * p, 1 * p, 1 * p);
-               g.fillStyle(0xff69b4); g.fillRect(8 * p, 6 * p, 1 * p, 1 * p);
-               g.fillStyle(dress); g.fillRect(4 * p, 8 * p, 5 * p, 3 * p);
-               g.fillStyle(jewel); g.fillCircle(6.5 * p, 9.5 * p, 0.5 * p);
-
-               if (frameType === 'run1') {
-                  g.fillStyle(dress); g.fillRect(3 * p, 11 * p, 7 * p, 3 * p);
-                  g.fillStyle(trim); g.fillRect(3 * p, 13 * p, 7 * p, 1 * p);
-                  g.fillStyle(legs); g.fillRect(4 * p, 14 * p, 2 * p, 2 * p); g.fillRect(7 * p, 14 * p, 2 * p, 1 * p);
-                  g.fillStyle(shoes); g.fillRect(3 * p, 16 * p, 3 * p, 1 * p); g.fillRect(7 * p, 15 * p, 3 * p, 1 * p);
-                  g.fillStyle(dress); g.fillRect(2 * p, 8 * p, 2 * p, 3 * p); g.fillRect(9 * p, 9 * p, 2 * p, 3 * p);
-               } else if (frameType === 'run2') {
-                  g.fillStyle(dress); g.fillRect(3 * p, 11 * p, 7 * p, 3 * p);
-                  g.fillStyle(trim); g.fillRect(3 * p, 13 * p, 7 * p, 1 * p);
-                  g.fillStyle(legs); g.fillRect(4 * p, 14 * p, 2 * p, 1 * p); g.fillRect(7 * p, 14 * p, 2 * p, 2 * p);
-                  g.fillStyle(shoes); g.fillRect(3 * p, 15 * p, 3 * p, 1 * p); g.fillRect(7 * p, 16 * p, 3 * p, 1 * p);
-                  g.fillStyle(dress); g.fillRect(1 * p, 9 * p, 2 * p, 3 * p); g.fillRect(8 * p, 8 * p, 2 * p, 3 * p);
-               } else if (frameType === 'jump') {
-                  g.fillStyle(dress); g.fillRect(2 * p, 10 * p, 9 * p, 4 * p);
-                  g.fillStyle(trim); g.fillRect(2 * p, 14 * p, 9 * p, 1 * p);
-                  g.fillStyle(legs); g.fillRect(4 * p, 15 * p, 2 * p, 2 * p); g.fillRect(7 * p, 15 * p, 2 * p, 1 * p);
-                  g.fillStyle(shoes); g.fillRect(4 * p, 16 * p, 2 * p, 1 * p); g.fillRect(7 * p, 16 * p, 2 * p, 1 * p);
-                  g.fillStyle(dress); g.fillRect(1 * p, 5 * p, 2 * p, 3 * p); g.fillRect(10 * p, 5 * p, 2 * p, 3 * p);
-                  g.fillStyle(skin); g.fillRect(1 * p, 3 * p, 2 * p, 2 * p); g.fillRect(10 * p, 3 * p, 2 * p, 2 * p);
-               } else {
-                  g.fillStyle(dress); g.fillRect(2 * p, 11 * p, 9 * p, 4 * p);
-                  g.fillStyle(trim); g.fillRect(2 * p, 15 * p, 9 * p, 2 * p);
-                  g.fillStyle(dress); g.fillRect(2 * p, 8 * p, 2 * p, 3 * p); g.fillRect(9 * p, 8 * p, 2 * p, 3 * p);
-               }
-               g.generateTexture(key, 13 * p, 17 * p); g.destroy();
             }
 
             playAudio(freq: number, type: OscillatorType, dur: number, ramp = true) {
@@ -358,345 +314,7 @@ export default function PhaserGame({
             }
 
             createTextures() {
-               const ge = this.make.graphics({ x: 0, y: 0 }, false);
-               ge.fillStyle(0x8b4513, 1); ge.fillRect(4, 0, 24, 20);
-               ge.fillStyle(0xcc2200, 1); ge.fillRect(0, 0, 32, 14); ge.fillRect(2, 14, 28, 6);
-               ge.fillStyle(0xffdab9, 1); ge.fillRect(6, 20, 20, 12);
-               ge.fillStyle(0x000, 1); ge.fillRect(9, 23, 5, 5); ge.fillRect(18, 23, 5, 5);
-               ge.fillStyle(0xffffff, 1); ge.fillRect(10, 24, 3, 3); ge.fillRect(19, 24, 3, 3);
-               ge.fillStyle(0x8b4513, 1); ge.fillRect(2, 28, 10, 4); ge.fillRect(20, 28, 10, 4);
-               ge.generateTexture('enemy', 32, 32); ge.destroy();
-
-               const gF = this.make.graphics({ x: 0, y: 0 }, false);
-               gF.fillStyle(0xff6600, 1); gF.fillCircle(10, 10, 10);
-               gF.fillStyle(0xffff00, 1); gF.fillCircle(10, 10, 6);
-               gF.fillStyle(0xffffff, 1); gF.fillCircle(8, 8, 3);
-               gF.generateTexture('fireball', 20, 20); gF.destroy();
-
-               const gP = this.make.graphics({ x: 0, y: 0 }, false);
-               gP.fillStyle(0x228b22, 1); gP.fillRect(0, 0, 96, 16);
-               gP.fillStyle(0x32cd32, 1); gP.fillRect(2, 2, 92, 6);
-               gP.lineStyle(2, 0x145214, 1); gP.strokeRect(0, 0, 96, 16);
-               gP.generateTexture('movingPlat', 96, 16); gP.destroy();
-
-               const gC = this.make.graphics({ x: 0, y: 0 }, false);
-               gC.fillStyle(0xffffff, 0.9); gC.fillEllipse(60, 40, 80, 40); gC.fillEllipse(40, 48, 60, 36); gC.fillEllipse(85, 48, 55, 30); gC.fillEllipse(60, 55, 100, 28);
-               gC.fillStyle(0xe8e8ff, 0.5); gC.fillEllipse(55, 35, 50, 20);
-               gC.generateTexture('cloud', 120, 70); gC.destroy();
-
-               const gq = this.make.graphics({ x: 0, y: 0 }, false);
-               gq.fillStyle(0xf8b800, 1); gq.fillRect(0, 0, 32, 32);
-               gq.fillStyle(0xfc6400, 1); gq.fillRect(0, 0, 32, 3); gq.fillRect(0, 0, 3, 32);
-               gq.fillStyle(0x7c4c00, 1); gq.fillRect(29, 0, 3, 32); gq.fillRect(0, 29, 32, 3);
-               gq.fillStyle(0xffffff, 1); gq.fillRect(13, 5, 6, 3); gq.fillRect(19, 8, 3, 4); gq.fillRect(16, 12, 3, 3); gq.fillRect(16, 19, 3, 3); gq.fillRect(16, 23, 3, 3);
-               gq.generateTexture('qblock', 32, 32); gq.clear();
-               gq.fillStyle(0x7c5800, 1); gq.fillRect(0, 0, 32, 32);
-               gq.fillStyle(0x9b7000, 1); gq.fillRect(2, 2, 28, 28);
-               gq.generateTexture('qblock_empty', 32, 32); gq.destroy();
-
-               const gB = this.make.graphics({ x: 0, y: 0 }, false);
-               gB.fillStyle(0xc84c0c, 1); gB.fillRect(0, 0, 32, 32);
-               gB.fillStyle(0xfc9838, 1); gB.fillRect(1, 1, 14, 6); gB.fillRect(17, 1, 14, 6); gB.fillRect(1, 17, 6, 6); gB.fillRect(9, 17, 14, 6); gB.fillRect(25, 17, 6, 6);
-               gB.fillStyle(0x7c3800, 1); gB.fillRect(0, 8, 32, 2); gB.fillRect(0, 24, 32, 2); gB.fillRect(15, 0, 2, 8); gB.fillRect(7, 16, 2, 8); gB.fillRect(23, 16, 2, 8);
-               gB.generateTexture('block', 32, 32); gB.destroy();
-
-               const gFlag = this.make.graphics({ x: 0, y: 0 }, false);
-               gFlag.fillStyle(0xffffff, 1); gFlag.fillRect(0, 0, 4, 160);
-               gFlag.fillStyle(0x00cc00, 1); gFlag.fillRect(4, 0, 28, 20);
-               gFlag.generateTexture('flag', 32, 160); gFlag.destroy();
-
-               const gPB = this.make.graphics({ x: 0, y: 0 }, false);
-               gPB.fillStyle(0x196419, 1); gPB.fillRect(0, 0, 32, 32);
-               gPB.fillStyle(0x22a022, 1); gPB.fillRect(5, 0, 10, 32);
-               gPB.fillStyle(0x0d3d0d, 1); gPB.fillRect(0, 0, 3, 32); gPB.fillRect(29, 0, 3, 32);
-               gPB.generateTexture('pipe_body', 32, 32); gPB.destroy();
-
-               const gPC = this.make.graphics({ x: 0, y: 0 }, false);
-               gPC.fillStyle(0x196419, 1); gPC.fillRect(0, 0, 40, 18);
-               gPC.fillStyle(0x22a022, 1); gPC.fillRect(6, 2, 12, 14);
-               gPC.fillStyle(0x0d3d0d, 1); gPC.fillRect(0, 0, 3, 18); gPC.fillRect(37, 0, 3, 18);
-               gPC.lineStyle(2, 0x0d3d0d, 1); gPC.strokeRect(0, 0, 40, 18);
-               gPC.generateTexture('pipe_cap', 40, 18); gPC.destroy();
-
-               const gHill = this.make.graphics({ x: 0, y: 0 }, false);
-               gHill.fillStyle(0x3c8c3c, 1); gHill.fillEllipse(56, 44, 96, 64);
-               gHill.fillStyle(0x52a852, 1); gHill.fillEllipse(44, 36, 56, 32);
-               gHill.generateTexture('hill', 112, 64); gHill.destroy();
-
-               const gCW = this.make.graphics({ x: 0, y: 0 }, false);
-               gCW.fillStyle(0x9b5e30, 1); gCW.fillRect(0, 0, 32, 32);
-               gCW.fillStyle(0x7a4520, 1); gCW.fillRect(0, 0, 14, 14); gCW.fillRect(18, 16, 14, 14);
-               gCW.fillStyle(0x5a3010, 1); gCW.fillRect(0, 14, 32, 3); gCW.fillRect(14, 0, 4, 14); gCW.fillRect(0, 29, 32, 3); gCW.fillRect(14, 16, 4, 14);
-               gCW.generateTexture('castle_wall', 32, 32); gCW.destroy();
-
-               // Purple night theme textures for level 3
-               const gPBlock = this.make.graphics({ x: 0, y: 0 }, false);
-               gPBlock.fillStyle(0x2a1a6e, 1); gPBlock.fillRect(0, 0, 32, 32);
-               gPBlock.fillStyle(0x3d2a8f, 1); gPBlock.fillRect(1, 1, 14, 6); gPBlock.fillRect(17, 1, 14, 6); gPBlock.fillRect(1, 17, 6, 6); gPBlock.fillRect(9, 17, 14, 6); gPBlock.fillRect(25, 17, 6, 6);
-               gPBlock.fillStyle(0x1a0e4e, 1); gPBlock.fillRect(0, 8, 32, 2); gPBlock.fillRect(0, 24, 32, 2); gPBlock.fillRect(15, 0, 2, 8); gPBlock.fillRect(7, 16, 2, 8); gPBlock.fillRect(23, 16, 2, 8);
-               gPBlock.generateTexture('purple_block', 32, 32); gPBlock.destroy();
-
-               const gPPipeB = this.make.graphics({ x: 0, y: 0 }, false);
-               gPPipeB.fillStyle(0x5c2d91, 1); gPPipeB.fillRect(0, 0, 32, 32);
-               gPPipeB.fillStyle(0x7b3fbd, 1); gPPipeB.fillRect(5, 0, 10, 32);
-               gPPipeB.fillStyle(0x3d1a6e, 1); gPPipeB.fillRect(0, 0, 3, 32); gPPipeB.fillRect(29, 0, 3, 32);
-               gPPipeB.generateTexture('purple_pipe_body', 32, 32); gPPipeB.destroy();
-
-               const gPPipeC = this.make.graphics({ x: 0, y: 0 }, false);
-               gPPipeC.fillStyle(0x5c2d91, 1); gPPipeC.fillRect(0, 0, 40, 18);
-               gPPipeC.fillStyle(0x7b3fbd, 1); gPPipeC.fillRect(6, 2, 12, 14);
-               gPPipeC.fillStyle(0x3d1a6e, 1); gPPipeC.fillRect(0, 0, 3, 18); gPPipeC.fillRect(37, 0, 3, 18);
-               gPPipeC.lineStyle(2, 0x3d1a6e, 1); gPPipeC.strokeRect(0, 0, 40, 18);
-               gPPipeC.generateTexture('purple_pipe_cap', 40, 18); gPPipeC.destroy();
-
-               const gPBush = this.make.graphics({ x: 0, y: 0 }, false);
-               gPBush.fillStyle(0x2d1b4e, 1); gPBush.fillEllipse(60, 50, 120, 50); gPBush.fillEllipse(35, 45, 60, 40); gPBush.fillEllipse(90, 45, 70, 44);
-               gPBush.fillStyle(0x3d2566, 1); gPBush.fillEllipse(50, 40, 50, 30); gPBush.fillEllipse(80, 42, 40, 26);
-               gPBush.generateTexture('purple_bush', 120, 64); gPBush.destroy();
-
-               const gStar = this.make.graphics({ x: 0, y: 0 }, false);
-               gStar.fillStyle(0xffee00, 1);
-               gStar.fillRect(4, 0, 2, 2); gStar.fillRect(0, 4, 10, 2); gStar.fillRect(2, 2, 6, 6); gStar.fillRect(4, 6, 2, 4);
-               gStar.generateTexture('star', 10, 10); gStar.destroy();
-
-               const gSmBlock = this.make.graphics({ x: 0, y: 0 }, false);
-               gSmBlock.fillStyle(0x1a1a5e, 1); gSmBlock.fillRect(0, 0, 32, 32);
-               gSmBlock.fillStyle(0x2a2a7e, 1); gSmBlock.fillRect(2, 2, 12, 12); gSmBlock.fillRect(18, 2, 12, 12); gSmBlock.fillRect(2, 18, 12, 12); gSmBlock.fillRect(18, 18, 12, 12);
-               gSmBlock.fillStyle(0x0e0e3e, 1); gSmBlock.fillRect(0, 15, 32, 2); gSmBlock.fillRect(15, 0, 2, 32);
-               gSmBlock.generateTexture('steel_block', 32, 32); gSmBlock.destroy();
-
-               // Bullet Bill cannon texture
-               const gCannon = this.make.graphics({ x: 0, y: 0 }, false);
-               gCannon.fillStyle(0x111111, 1); gCannon.fillRect(0, 0, 32, 32);
-               gCannon.fillStyle(0x333333, 1); gCannon.fillRect(2, 0, 28, 8);
-               gCannon.fillStyle(0x222222, 1); gCannon.fillRect(4, 8, 24, 20);
-               gCannon.fillStyle(0x444444, 1); gCannon.fillRect(6, 10, 20, 4);
-               gCannon.fillStyle(0x111111, 1); gCannon.fillRect(0, 28, 32, 4);
-               gCannon.generateTexture('cannon', 32, 32); gCannon.destroy();
-
-               // Bullet Bill projectile texture
-               const gBullet = this.make.graphics({ x: 0, y: 0 }, false);
-               gBullet.fillStyle(0x111111, 1); gBullet.fillEllipse(12, 10, 24, 18);
-               gBullet.fillStyle(0x333333, 1); gBullet.fillRect(0, 4, 8, 12);
-               gBullet.fillStyle(0xffffff, 1); gBullet.fillCircle(18, 8, 3);
-               gBullet.fillStyle(0x000000, 1); gBullet.fillCircle(18, 8, 1.5);
-               gBullet.generateTexture('bullet_bill', 24, 20); gBullet.destroy();
-
-               // Hammer Brother texture
-               const gHB = this.make.graphics({ x: 0, y: 0 }, false);
-               gHB.fillStyle(0x228b22, 1); gHB.fillEllipse(16, 22, 22, 20);
-               gHB.fillStyle(0x32cd32, 1); gHB.fillEllipse(14, 18, 14, 12);
-               gHB.fillStyle(0xfff44f, 1); gHB.fillEllipse(16, 8, 16, 14);
-               gHB.fillStyle(0xffffff, 1); gHB.fillCircle(12, 6, 3); gHB.fillCircle(20, 6, 3);
-               gHB.fillStyle(0x000000, 1); gHB.fillCircle(12, 6, 1.5); gHB.fillCircle(20, 6, 1.5);
-               gHB.fillStyle(0xffffff, 1); gHB.fillRect(0, 0, 6, 3); gHB.fillRect(4, 0, 3, 8);
-               gHB.fillStyle(0x8b4513, 1); gHB.fillRect(2, 8, 3, 10);
-               gHB.generateTexture('hammer_bro', 32, 32); gHB.destroy();
-
-               // Hammer projectile
-               const gHammer = this.make.graphics({ x: 0, y: 0 }, false);
-               gHammer.fillStyle(0x8b4513, 1); gHammer.fillRect(6, 4, 4, 14);
-               gHammer.fillStyle(0x666666, 1); gHammer.fillRect(2, 0, 12, 6);
-               gHammer.generateTexture('hammer', 16, 18); gHammer.destroy();
-
-               // Level 4 textures - Sky platform level
-               const gMushPlat = this.make.graphics({ x: 0, y: 0 }, false);
-               // Flat green platform with rounded ends and dark spots (like the screenshot)
-               gMushPlat.fillStyle(0x228b22, 1); gMushPlat.fillRect(10, 4, 108, 16);
-               gMushPlat.fillStyle(0x228b22, 1); gMushPlat.fillEllipse(10, 12, 20, 16); gMushPlat.fillEllipse(118, 12, 20, 16);
-               gMushPlat.fillStyle(0x32cd32, 1); gMushPlat.fillRect(10, 2, 108, 8);
-               gMushPlat.fillStyle(0x145214, 1); gMushPlat.fillCircle(24, 12, 5); gMushPlat.fillCircle(48, 14, 6); gMushPlat.fillCircle(72, 12, 5); gMushPlat.fillCircle(96, 14, 6); gMushPlat.fillCircle(112, 12, 4);
-               gMushPlat.fillStyle(0x3cb03c, 1); gMushPlat.fillRect(10, 0, 108, 3);
-               gMushPlat.generateTexture('mush_platform', 128, 20); gMushPlat.destroy();
-
-               // Green block for level 4 pillar tops
-               const gGreenBlock = this.make.graphics({ x: 0, y: 0 }, false);
-               gGreenBlock.fillStyle(0x22a022, 1); gGreenBlock.fillRect(0, 0, 32, 32);
-               gGreenBlock.fillStyle(0x32cd32, 1); gGreenBlock.fillRect(1, 1, 14, 14); gGreenBlock.fillRect(17, 17, 14, 14);
-               gGreenBlock.fillStyle(0x145214, 1); gGreenBlock.fillRect(0, 15, 32, 2); gGreenBlock.fillRect(15, 0, 2, 32);
-               gGreenBlock.fillStyle(0x3cb03c, 1); gGreenBlock.fillRect(0, 0, 32, 4);
-               gGreenBlock.generateTexture('green_block', 32, 32); gGreenBlock.destroy();
-
-               const gMushStem = this.make.graphics({ x: 0, y: 0 }, false);
-               gMushStem.fillStyle(0x196419, 1); gMushStem.fillRect(0, 0, 20, 64);
-               gMushStem.fillStyle(0x22a022, 1); gMushStem.fillRect(4, 0, 8, 64);
-               gMushStem.fillStyle(0x0d3d0d, 1); gMushStem.fillRect(0, 0, 2, 64); gMushStem.fillRect(18, 0, 2, 64);
-               gMushStem.generateTexture('mush_stem', 20, 64); gMushStem.destroy();
-
-               const gStoneWall = this.make.graphics({ x: 0, y: 0 }, false);
-               gStoneWall.fillStyle(0x8b7355, 1); gStoneWall.fillRect(0, 0, 32, 32);
-               gStoneWall.fillStyle(0xa08c60, 1); gStoneWall.fillRect(1, 1, 14, 10); gStoneWall.fillRect(17, 1, 14, 10); gStoneWall.fillRect(1, 13, 8, 8); gStoneWall.fillRect(11, 13, 10, 8); gStoneWall.fillRect(23, 13, 8, 8); gStoneWall.fillRect(1, 23, 14, 8); gStoneWall.fillRect(17, 23, 14, 8);
-               gStoneWall.fillStyle(0x6b5535, 1); gStoneWall.fillRect(0, 11, 32, 2); gStoneWall.fillRect(0, 21, 32, 2); gStoneWall.fillRect(15, 0, 2, 11); gStoneWall.fillRect(9, 11, 2, 10); gStoneWall.fillRect(21, 11, 2, 10); gStoneWall.fillRect(15, 21, 2, 11);
-               gStoneWall.generateTexture('stone_wall', 32, 32); gStoneWall.destroy();
-
-               // Level 5 textures - Lava/Boss level
-               const gLavaBlock = this.make.graphics({ x: 0, y: 0 }, false);
-               gLavaBlock.fillStyle(0x4a1a0a, 1); gLavaBlock.fillRect(0, 0, 32, 32);
-               gLavaBlock.fillStyle(0x6b2a10, 1); gLavaBlock.fillRect(1, 1, 14, 14); gLavaBlock.fillRect(17, 17, 14, 14);
-               gLavaBlock.fillStyle(0x3a0a00, 1); gLavaBlock.fillRect(0, 15, 32, 2); gLavaBlock.fillRect(15, 0, 2, 32);
-               gLavaBlock.generateTexture('lava_block', 32, 32); gLavaBlock.destroy();
-
-               const gLava = this.make.graphics({ x: 0, y: 0 }, false);
-               gLava.fillStyle(0xff4400, 1); gLava.fillRect(0, 0, 64, 32);
-               gLava.fillStyle(0xff6600, 1); gLava.fillRect(0, 0, 64, 8);
-               gLava.fillStyle(0xffaa00, 1); gLava.fillRect(5, 0, 12, 4); gLava.fillRect(30, 0, 16, 5); gLava.fillRect(52, 0, 10, 3);
-               gLava.fillStyle(0xcc2200, 1); gLava.fillRect(0, 20, 64, 12);
-               gLava.generateTexture('lava', 64, 32); gLava.destroy();
-
-               const gBowser = this.make.graphics({ x: 0, y: 0 }, false);
-               // Classic NES Bowser - green spiky shell, tan belly, horns
-               // Legs
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillRect(8, 52, 12, 12); gBowser.fillRect(40, 52, 12, 12);
-               // Feet/claws
-               gBowser.fillStyle(0xd2691e, 1); gBowser.fillRect(4, 60, 8, 6); gBowser.fillRect(16, 60, 6, 6); gBowser.fillRect(38, 60, 6, 6); gBowser.fillRect(48, 60, 8, 6);
-               // Body
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(32, 42, 44, 30);
-               // Shell (back)
-               gBowser.fillStyle(0x145214, 1); gBowser.fillEllipse(36, 38, 36, 26);
-               // Shell spikes
-               gBowser.fillStyle(0xffffff, 1);
-               gBowser.fillTriangle(24, 26, 28, 18, 32, 26);
-               gBowser.fillTriangle(32, 24, 36, 16, 40, 24);
-               gBowser.fillTriangle(40, 26, 44, 18, 48, 26);
-               // Belly
-               gBowser.fillStyle(0xd2a060, 1); gBowser.fillEllipse(24, 46, 20, 18);
-               // Belly lines
-               gBowser.fillStyle(0xb8863c, 1); gBowser.fillRect(16, 42, 16, 2); gBowser.fillRect(16, 46, 16, 2); gBowser.fillRect(16, 50, 16, 2);
-               // Arms
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillRect(4, 38, 10, 8); gBowser.fillRect(46, 36, 10, 8);
-               // Claws on arms
-               gBowser.fillStyle(0xd2691e, 1); gBowser.fillRect(2, 42, 6, 4); gBowser.fillRect(52, 40, 6, 4);
-               // Head
-               gBowser.fillStyle(0x228b22, 1); gBowser.fillEllipse(20, 24, 24, 22);
-               // Snout/face
-               gBowser.fillStyle(0x32cd32, 1); gBowser.fillEllipse(14, 26, 14, 12);
-               // Eyes
-               gBowser.fillStyle(0xffffff, 1); gBowser.fillCircle(16, 20, 4); gBowser.fillCircle(26, 18, 4);
-               gBowser.fillStyle(0x000000, 1); gBowser.fillCircle(15, 20, 2); gBowser.fillCircle(25, 18, 2);
-               // Eyebrows (angry)
-               gBowser.fillStyle(0xff4500, 1); gBowser.fillRect(12, 16, 8, 2); gBowser.fillRect(22, 14, 8, 2);
-               // Mouth
-               gBowser.fillStyle(0x000000, 1); gBowser.fillRect(8, 28, 12, 3);
-               gBowser.fillStyle(0xffffff, 1); gBowser.fillRect(9, 28, 2, 3); gBowser.fillRect(13, 28, 2, 3); gBowser.fillRect(17, 28, 2, 3);
-               // Horns
-               gBowser.fillStyle(0xd2691e, 1);
-               gBowser.fillTriangle(12, 14, 8, 4, 16, 12);
-               gBowser.fillTriangle(26, 12, 28, 2, 32, 10);
-               // Hair/mane (red)
-               gBowser.fillStyle(0xff4500, 1); gBowser.fillRect(6, 10, 4, 6); gBowser.fillRect(10, 8, 4, 6); gBowser.fillRect(14, 6, 4, 8);
-               gBowser.generateTexture('bowser', 64, 66); gBowser.destroy();
-
-               const gFireBreath = this.make.graphics({ x: 0, y: 0 }, false);
-               gFireBreath.fillStyle(0xff4400, 1); gFireBreath.fillEllipse(16, 10, 32, 16);
-               gFireBreath.fillStyle(0xff8800, 1); gFireBreath.fillEllipse(12, 10, 20, 10);
-               gFireBreath.fillStyle(0xffcc00, 1); gFireBreath.fillEllipse(8, 10, 10, 6);
-               gFireBreath.generateTexture('fire_breath', 32, 20); gFireBreath.destroy();
-
-               // Fire bar ball (single fireball in the chain)
-               const gFBall = this.make.graphics({ x: 0, y: 0 }, false);
-               gFBall.fillStyle(0xff6600, 1); gFBall.fillCircle(8, 8, 8);
-               gFBall.fillStyle(0xff9900, 1); gFBall.fillCircle(7, 6, 5);
-               gFBall.fillStyle(0xffcc00, 1); gFBall.fillCircle(6, 5, 3);
-               gFBall.generateTexture('firebar_ball', 16, 16); gFBall.destroy();
-
-               // Fire bar center block
-               const gFCenter = this.make.graphics({ x: 0, y: 0 }, false);
-               gFCenter.fillStyle(0xcc6600, 1); gFCenter.fillRect(0, 0, 20, 20);
-               gFCenter.fillStyle(0xff8800, 1); gFCenter.fillRect(2, 2, 16, 16);
-               gFCenter.fillStyle(0xffaa00, 1); gFCenter.fillCircle(10, 10, 5);
-               gFCenter.generateTexture('firebar_center', 20, 20); gFCenter.destroy();
-
-               const gM = this.make.graphics({ x: 0, y: 0 }, false);
-               gM.fillStyle(0xffdab9, 1); gM.fillRect(6, 16, 12, 10); gM.fillStyle(0xeec090, 1); gM.fillRect(6, 22, 12, 4);
-               gM.fillStyle(0xcc0000, 1); gM.fillEllipse(12, 12, 24, 18); gM.fillRect(4, 12, 16, 8);
-               gM.fillStyle(0xffffff, 1); gM.fillCircle(7, 10, 3); gM.fillCircle(17, 8, 3); gM.fillCircle(13, 14, 2);
-               gM.fillStyle(0xffdab9, 1); gM.fillRect(6, 17, 4, 4); gM.fillRect(14, 17, 4, 4);
-               gM.fillStyle(0x000000, 1); gM.fillRect(7, 18, 2, 2); gM.fillRect(15, 18, 2, 2);
-               gM.generateTexture('mushroom', 24, 26); gM.destroy();
-
-               // Green 1-up mushroom
-               const gM1 = this.make.graphics({ x: 0, y: 0 }, false);
-               gM1.fillStyle(0xffdab9, 1); gM1.fillRect(6, 16, 12, 10); gM1.fillStyle(0xeec090, 1); gM1.fillRect(6, 22, 12, 4);
-               gM1.fillStyle(0x00aa00, 1); gM1.fillEllipse(12, 12, 24, 18); gM1.fillRect(4, 12, 16, 8);
-               gM1.fillStyle(0xffffff, 1); gM1.fillCircle(7, 10, 3); gM1.fillCircle(17, 8, 3); gM1.fillCircle(13, 14, 2);
-               gM1.fillStyle(0xffdab9, 1); gM1.fillRect(6, 17, 4, 4); gM1.fillRect(14, 17, 4, 4);
-               gM1.fillStyle(0x000000, 1); gM1.fillRect(7, 18, 2, 2); gM1.fillRect(15, 18, 2, 2);
-               gM1.generateTexture('mushroom_1up', 24, 26); gM1.destroy();
-
-               // Collectible coin texture
-               const gCoin = this.make.graphics({ x: 0, y: 0 }, false);
-               gCoin.fillStyle(0xff8c00, 1); gCoin.fillEllipse(10, 12, 16, 20);
-               gCoin.fillStyle(0xffcc00, 1); gCoin.fillEllipse(10, 12, 10, 16);
-               gCoin.fillStyle(0xffffff, 0.4); gCoin.fillEllipse(8, 9, 4, 8);
-               gCoin.generateTexture('coin', 20, 24); gCoin.destroy();
-
-               const gPP = this.make.graphics({ x: 0, y: 0 }, false);
-               gPP.fillStyle(0x228b22, 1); gPP.fillRect(9, 16, 6, 16);
-               gPP.fillStyle(0xcc0000, 1); gPP.fillEllipse(12, 12, 24, 22);
-               gPP.fillStyle(0xffffff, 1); gPP.fillRect(2, 12, 20, 5);
-               gPP.fillStyle(0xcc0000, 1); gPP.fillRect(5, 12, 3, 4); gPP.fillRect(11, 12, 3, 4); gPP.fillRect(17, 12, 3, 4);
-               gPP.fillStyle(0xffffff, 1); gPP.fillCircle(7, 7, 4); gPP.fillCircle(17, 7, 4);
-               gPP.fillStyle(0x000000, 1); gPP.fillCircle(8, 7, 2); gPP.fillCircle(18, 7, 2);
-               gPP.fillStyle(0xff6666, 1); gPP.fillCircle(5, 4, 2); gPP.fillCircle(19, 4, 2);
-               gPP.generateTexture('piranha', 24, 32); gPP.destroy();
-
-               const gK = this.make.graphics({ x: 0, y: 0 }, false);
-               gK.fillStyle(0x228b22, 1); gK.fillEllipse(16, 18, 26, 22);
-               gK.fillStyle(0x32cd32, 1); gK.fillEllipse(14, 15, 16, 12);
-               gK.lineStyle(1, 0x145214, 1); gK.strokeEllipse(16, 18, 26, 22); gK.lineBetween(16, 7, 16, 29); gK.lineBetween(5, 12, 27, 24);
-               gK.fillStyle(0xfff44f, 1); gK.fillEllipse(16, 5, 14, 12);
-               gK.fillStyle(0xffffff, 1); gK.fillCircle(13, 4, 2); gK.fillCircle(19, 4, 2);
-               gK.fillStyle(0x000000, 1); gK.fillCircle(13, 4, 1); gK.fillCircle(19, 4, 1);
-               gK.fillStyle(0xfff44f, 1); gK.fillEllipse(9, 29, 10, 6); gK.fillEllipse(23, 29, 10, 6);
-               gK.generateTexture('koopa', 32, 32); gK.destroy();
-
-               this.drawPlayer('p1_run1', 0xd50000, 'run1'); this.drawPlayer('p1_run2', 0xd50000, 'run2'); this.drawPlayer('p1_jump', 0xd50000, 'jump'); this.drawPlayer('p1_crouch', 0xd50000, 'crouch');
-               this.drawPrincess('p2_run1', 'run1'); this.drawPrincess('p2_run2', 'run2'); this.drawPrincess('p2_jump', 'jump'); this.drawPrincess('p2_crouch', 'crouch');
-
-               // Death frames (X pose - arms up, legs spread)
-               const drawDeath = (key: string, shirtCol: number) => {
-                  const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
-                  const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
-                  // Hat
-                  g.fillStyle(hat); g.fillRect(4 * p, 0, 5 * p, 2 * p); g.fillRect(3 * p, 2 * p, 7 * p, 1 * p);
-                  // Face
-                  g.fillStyle(skin); g.fillRect(4 * p, 3 * p, 5 * p, 4 * p);
-                  g.fillStyle(0x000000); g.fillRect(5 * p, 4 * p, 1 * p, 1 * p); g.fillRect(7 * p, 4 * p, 1 * p, 1 * p);
-                  // Open mouth (surprised)
-                  g.fillStyle(0x000000); g.fillRect(5 * p, 6 * p, 3 * p, 1 * p);
-                  // Body
-                  g.fillStyle(shirtCol); g.fillRect(4 * p, 7 * p, 5 * p, 3 * p);
-                  g.fillStyle(overalls); g.fillRect(4 * p, 10 * p, 5 * p, 3 * p);
-                  // Arms up and out (X shape)
-                  g.fillStyle(shirtCol); g.fillRect(1 * p, 3 * p, 3 * p, 2 * p); g.fillRect(9 * p, 3 * p, 3 * p, 2 * p);
-                  g.fillStyle(skin); g.fillRect(0, 2 * p, 2 * p, 2 * p); g.fillRect(11 * p, 2 * p, 2 * p, 2 * p);
-                  // Legs spread out (X shape)
-                  g.fillStyle(overalls); g.fillRect(2 * p, 13 * p, 2 * p, 3 * p); g.fillRect(9 * p, 13 * p, 2 * p, 3 * p);
-                  g.fillStyle(shoes); g.fillRect(1 * p, 16 * p, 2 * p, 1 * p); g.fillRect(10 * p, 16 * p, 2 * p, 1 * p);
-                  g.generateTexture(key, 13 * p, 17 * p); g.destroy();
-               };
-               drawDeath('p1_death', 0xd50000);
-               // Princess death
-               const drawPDeath = () => {
-                  const skin = 0xffdab9; const dress = 0xffb6c1; const crown = 0xffd700; const shoes = 0xe52458;
-                  const g = this.make.graphics({ x: 0, y: 0 }, false); const p = 2;
-                  g.fillStyle(crown); g.fillRect(5 * p, 0, 3 * p, 1 * p); g.fillRect(4 * p, 1 * p, 5 * p, 1 * p);
-                  g.fillStyle(skin); g.fillRect(4 * p, 2 * p, 5 * p, 4 * p);
-                  g.fillStyle(0x000000); g.fillRect(5 * p, 3 * p, 1 * p, 1 * p); g.fillRect(7 * p, 3 * p, 1 * p, 1 * p);
-                  g.fillStyle(0x000000); g.fillRect(5 * p, 5 * p, 3 * p, 1 * p);
-                  g.fillStyle(dress); g.fillRect(4 * p, 6 * p, 5 * p, 4 * p);
-                  g.fillStyle(dress); g.fillRect(4 * p, 10 * p, 5 * p, 3 * p);
-                  // Arms up (X)
-                  g.fillStyle(dress); g.fillRect(1 * p, 3 * p, 3 * p, 2 * p); g.fillRect(9 * p, 3 * p, 3 * p, 2 * p);
-                  g.fillStyle(skin); g.fillRect(0, 2 * p, 2 * p, 2 * p); g.fillRect(11 * p, 2 * p, 2 * p, 2 * p);
-                  // Legs spread (X)
-                  g.fillStyle(dress); g.fillRect(2 * p, 13 * p, 2 * p, 2 * p); g.fillRect(9 * p, 13 * p, 2 * p, 2 * p);
-                  g.fillStyle(shoes); g.fillRect(1 * p, 15 * p, 2 * p, 1 * p); g.fillRect(10 * p, 15 * p, 2 * p, 1 * p);
-                  g.generateTexture('p2_death', 13 * p, 17 * p); g.destroy();
-               };
-               drawPDeath();
-               this.anims.create({ key: 'p1_run', frames: [{ key: 'p1_run1' }, { key: 'p1_run2' }], frameRate: 10, repeat: -1 });
-               this.anims.create({ key: 'p2_run', frames: [{ key: 'p2_run1' }, { key: 'p2_run2' }], frameRate: 10, repeat: -1 });
+               createAllTextures(this);
             }
 
             create() {
@@ -906,6 +524,16 @@ export default function PhaserGame({
                });
 
                socket.on('loadLevel', (lvl: number) => { this.level = lvl; this.gameWon = false; this.generateLevel(this.level); });
+               socket.on('loadCustomLevel', (levelId: string) => {
+                  try {
+                     const entries = JSON.parse(localStorage.getItem('mario_custom_levels') || '[]');
+                     const entry = entries.find((e: any) => e?.id === levelId);
+                     if (entry && entry.data) {
+                        this.playingCustomFromLibrary = true;
+                        this.generateCustomLevel(entry.data as LevelData);
+                     }
+                  } catch (e) { console.warn('Failed to load custom level:', e); }
+               });
                socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
 
                this.startBGM();
@@ -928,8 +556,13 @@ export default function PhaserGame({
                }
 
                if (lvl >= 6) {
+                  const savedLevel = getLevelBySlot(lvl);
+                  if (savedLevel) {
+                     this.generateCustomLevel(savedLevel.data);
+                     return;
+                  }
                   this.add.rectangle(400, 240, 800, 480, 0x1a1a2e).setScrollFactor(0).setDepth(-10).setData('decoration', true);
-                  this.add.text(400, 200, "LEVEL 6\nCOMING SOON!", { fontSize: "40px", color: "#ffd700", fontStyle: "bold", align: "center", stroke: "#000", strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
+                  this.add.text(400, 200, `LEVEL ${lvl}\nCOMING SOON!`, { fontSize: "40px", color: "#ffd700", fontStyle: "bold", align: "center", stroke: "#000", strokeThickness: 4 }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
                   this.add.text(400, 300, "You successfully loaded your save game!\nStay tuned for the next update.", { fontSize: "18px", color: "#ffffff", align: "center", fontStyle: "bold" }).setOrigin(0.5).setScrollFactor(0).setDepth(10).setData('decoration', true);
                   if (this.p1 && this.p2) {
                      this.p1.setPosition(300, 240);
@@ -1443,6 +1076,406 @@ export default function PhaserGame({
                }});
             }
 
+            generateCustomLevel(levelData: LevelData) {
+               // Clear existing level objects (same pattern as generateLevel)
+               this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true);
+               this.children.list.filter((c: any) => c.getData && c.getData('decoration')).forEach((c: any) => c.destroy());
+
+               if (this.p1 && this.p2) {
+                  this.p1.setAlpha(1); this.p2.setAlpha(1);
+                  this.p1.setDepth(10); this.p2.setDepth(10);
+                  this.p1.setScale(this.p1.getData('isBig') ? 1.4 : 1);
+                  this.p2.setScale(this.p2.getData('isBig') ? 1.4 : 1);
+                  if (this.p1.body) (this.p1.body as any).enable = true;
+                  if (this.p2.body) (this.p2.body as any).enable = true;
+                  (this.p1.body as any).allowGravity = true;
+                  (this.p2.body as any).allowGravity = true;
+               }
+
+               const B = 32;
+               const GY = 440;
+               const eSpeed = 55 + (this.level || 6) * 12;
+
+               // Background
+               this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
+
+               // Helper functions (same as built-in levels)
+               const addPipe = (px: number, segs: number, piranha = false, purple = false) => {
+                  const bodyTex = purple ? 'purple_pipe_body' : 'pipe_body';
+                  const capTex = purple ? 'purple_pipe_cap' : 'pipe_cap';
+                  for (let s = 0; s < segs - 1; s++) (this.blocks.create(px, GY - B * (s + 1), bodyTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                  (this.blocks.create(px, GY - B * segs + 7, capTex) as Phaser.Physics.Arcade.Sprite).setDepth(2);
+                  if (piranha) {
+                     const topY = GY - B * segs - 20; const hiddenY = GY - B * (segs - 1) + 4;
+                     const pl = this.piranhas.create(px, hiddenY, 'piranha') as Phaser.Physics.Arcade.Sprite;
+                     (pl.body as any).allowGravity = false; pl.setDepth(1);
+                     this.tweens.add({ targets: pl, y: topY, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 900) });
+                  }
+               };
+               const addGoomba = (ex: number, ey: number) => { const en = this.enemies.create(ex, ey, 'enemy') as Phaser.Physics.Arcade.Sprite; (en.body as any).allowGravity = true; en.setVelocityX(-eSpeed); en.setData('dir', -eSpeed); (en.body as any).setBounceX(1); };
+               const addKoopa = (ex: number, ey: number) => { const kp = this.enemies.create(ex, ey, 'koopa') as Phaser.Physics.Arcade.Sprite; (kp.body as any).allowGravity = true; kp.setVelocityX(-eSpeed * 0.8); kp.setData('dir', -eSpeed * 0.8); (kp.body as any).setBounceX(1); };
+               const addMovPlat = (px: number, py: number, spd: number, range = 90) => { const pl = this.movingPlatforms.create(px, py, 'movingPlat') as Phaser.Physics.Arcade.Sprite; pl.setData('originX', px); pl.setData('speed', spd); pl.setData('range', range); (pl.body as any).allowGravity = false; (pl.body as any).immovable = true; };
+               const addHammerBro = (hx: number, hy: number) => {
+                  const hb = this.enemies.create(hx, hy, 'hammer_bro') as Phaser.Physics.Arcade.Sprite;
+                  (hb.body as any).allowGravity = true;
+                  hb.setVelocityX(40); hb.setData('dir', 40); (hb.body as any).setBounceX(1);
+                  this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => { if (!hb.active || this.gameOver) return; hb.setVelocityY(-350); }});
+                  this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
+                     if (!hb.active || this.gameOver || this.gameWon) return;
+                     const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
+                     (hammer.body as any).allowGravity = true; hammer.setVelocityX(hb.flipX ? 120 : -120); hammer.setVelocityY(-300);
+                     this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
+                     this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
+                  }});
+               };
+               const buildCastle = (cx: number) => {
+                  this.castleX = cx;
+                  const doorBg = this.add.rectangle(cx + 80, GY - 48, 32, 64, 0x000000).setDepth(1);
+                  doorBg.setData('decoration', true);
+                  for (let col = 0; col < 5; col++) {
+                     for (let row = 0; row < 4; row++) {
+                        if (col === 2 && row < 3) continue;
+                        const wall = this.blocks.create(cx + col * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                        wall.setDepth(12);
+                     }
+                  }
+                  for (let row = 4; row < 7; row++) {
+                     const wallL = this.blocks.create(cx + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                     const wallR = this.blocks.create(cx + 4 * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                     wallL.setDepth(12); wallR.setDepth(12);
+                  }
+               };
+
+               // Process each object from levelData
+               for (const obj of levelData.objects) {
+                  const x = obj.col * B + B / 2;
+                  const y = obj.row * B + B / 2;
+                  const objWidth = obj.properties?.width ?? 1;
+                  const objHeight = obj.properties?.height ?? 1;
+
+                  switch (obj.type) {
+                     case 'ground_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 this.blocks.create(x + dc * B, y + dr * B, 'block');
+                              }
+                           }
+                        } else {
+                           this.blocks.create(x, y, 'block');
+                        }
+                        break;
+                     }
+                     case 'purple_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 this.blocks.create(x + dc * B, y + dr * B, 'purple_block');
+                              }
+                           }
+                        } else {
+                           this.blocks.create(x, y, 'purple_block');
+                        }
+                        break;
+                     }
+                     case 'castle_wall': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 (this.blocks.create(x + dc * B, y + dr * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite).setDepth(12);
+                              }
+                           }
+                        } else {
+                           (this.blocks.create(x, y, 'castle_wall') as Phaser.Physics.Arcade.Sprite).setDepth(12);
+                        }
+                        break;
+                     }
+                     case 'stair_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 this.blocks.create(x + dc * B, y + dr * B, 'block');
+                              }
+                           }
+                        } else {
+                           this.blocks.create(x, y, 'block');
+                        }
+                        break;
+                     }
+                     case 'green_pipe_2':
+                     case 'green_pipe_3':
+                     case 'green_pipe_4': {
+                        const segs = obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
+                        const piranha = obj.properties?.hasPiranha || false;
+                        addPipe(x, segs, piranha, false);
+                        break;
+                     }
+                     case 'purple_pipe_2':
+                     case 'purple_pipe_3':
+                     case 'purple_pipe_4': {
+                        const segs = obj.properties?.pipeHeight || parseInt(obj.type.slice(-1));
+                        const piranha = obj.properties?.hasPiranha || false;
+                        addPipe(x, segs, piranha, true);
+                        break;
+                     }
+                     case 'goomba':
+                        addGoomba(x, y);
+                        break;
+                     case 'koopa':
+                        addKoopa(x, y);
+                        break;
+                     case 'hammer_brother':
+                        addHammerBro(x, y);
+                        break;
+                     case 'piranha_plant': {
+                        const pl = this.piranhas.create(x, y, 'piranha') as Phaser.Physics.Arcade.Sprite;
+                        (pl.body as any).allowGravity = false; pl.setDepth(1);
+                        this.tweens.add({ targets: pl, y: y - 40, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 900) });
+                        break;
+                     }
+                     case 'coin': {
+                        const coin = this.coins.create(x, y, 'coin') as Phaser.Physics.Arcade.Sprite;
+                        (coin.body as any).allowGravity = false;
+                        this.tweens.add({ targets: coin, y: y - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                        break;
+                     }
+                     case 'question_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 const qb = this.qBlocks.create(x + dc * B, y + dr * B, 'qblock');
+                                 qb.setData('active', true);
+                              }
+                           }
+                        } else {
+                           const qb = this.qBlocks.create(x, y, 'qblock');
+                           qb.setData('active', true);
+                        }
+                        break;
+                     }
+                     case 'mushroom_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 this.blocks.create(x + dc * B, y + dr * B, 'block');
+                              }
+                           }
+                        } else {
+                           this.blocks.create(x, y, 'block');
+                        }
+                        break;
+                     }
+                     case 'moving_platform': {
+                        const speed = (obj.properties?.speed || 2) * 30;
+                        const range = (obj.properties?.movementRange || 4) * B;
+                        const platWidth = obj.properties?.width || 1;
+                        const platHeight = obj.properties?.height || 1;
+                        if (platWidth > 1 || platHeight > 1) {
+                           const totalW = platWidth * B;
+                           const totalH = platHeight > 1 ? platHeight * B : 16;
+                           const pl = this.movingPlatforms.create(x + (platWidth - 1) * B / 2, y + (platHeight - 1) * B / 2, 'movingPlat') as Phaser.Physics.Arcade.Sprite;
+                           pl.setDisplaySize(totalW, totalH);
+                           (pl.body as any).setSize(totalW, totalH);
+                           pl.setData('originX', x + (platWidth - 1) * B / 2);
+                           pl.setData('speed', speed);
+                           pl.setData('range', range);
+                           (pl.body as any).allowGravity = false;
+                           (pl.body as any).immovable = true;
+                        } else {
+                           addMovPlat(x, y, speed, range);
+                        }
+                        break;
+                     }
+                     case 'power_mushroom': {
+                        const mush = this.mushrooms.create(x, y, 'power_mushroom') as Phaser.Physics.Arcade.Sprite;
+                        (mush.body as any).allowGravity = false;
+                        mush.setData('type', 'power');
+                        break;
+                     }
+                     case 'poison_mushroom': {
+                        const pmush = this.enemies.create(x, y, 'poison_mushroom') as Phaser.Physics.Arcade.Sprite;
+                        (pmush.body as any).allowGravity = true;
+                        pmush.setVelocityX(-40);
+                        pmush.setData('dir', -40);
+                        (pmush.body as any).setBounceX(1);
+                        break;
+                     }
+                     case 'invincibility_star': {
+                        const star = this.coins.create(x, y, 'invincibility_star') as Phaser.Physics.Arcade.Sprite;
+                        (star.body as any).allowGravity = false;
+                        star.setData('type', 'star');
+                        this.tweens.add({ targets: star, y: y - 8, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                        break;
+                     }
+                     case 'fire_flower': {
+                        const flower = this.coins.create(x, y, 'fire_flower') as Phaser.Physics.Arcade.Sprite;
+                        (flower.body as any).allowGravity = false;
+                        flower.setData('type', 'fire_flower');
+                        break;
+                     }
+                     case 'koopa_shell': {
+                        const shell = this.enemies.create(x, y, 'koopa_shell') as Phaser.Physics.Arcade.Sprite;
+                        (shell.body as any).allowGravity = true;
+                        shell.setVelocityX(-200);
+                        shell.setData('dir', -200);
+                        (shell.body as any).setBounceX(1);
+                        break;
+                     }
+                     case 'bullet_bill_cannon': {
+                        this.blocks.create(x, y, 'cannon');
+                        const cannonY = y;
+                        this.time.addEvent({ delay: 2500 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                           if (this.gameOver || this.gameWon || this.countingDown) return;
+                           const bullet = this.enemies.create(x - 20, cannonY - 20, 'bullet_bill') as Phaser.Physics.Arcade.Sprite;
+                           (bullet.body as any).allowGravity = false;
+                           bullet.setVelocityX(-180);
+                           bullet.setData('dir', -180);
+                           this.time.delayedCall(5000, () => { if (bullet && bullet.active) bullet.destroy(); });
+                        }});
+                        break;
+                     }
+                     case 'fire_bar': {
+                        // Rotating fire bar - place center block and animate fireballs
+                        this.blocks.create(x, y, 'firebar_center');
+                        const numBalls = 5;
+                        const barBalls: Phaser.GameObjects.Image[] = [];
+                        for (let i = 1; i <= numBalls; i++) {
+                           const ball = this.add.image(x + i * 14, y, 'firebar_ball').setDepth(5).setData('decoration', true);
+                           barBalls.push(ball);
+                        }
+                        // Create a tween to rotate the balls
+                        let angle = 0;
+                        this.time.addEvent({ delay: 30, loop: true, callback: () => {
+                           if (this.gameOver || this.gameWon) return;
+                           angle += 0.04;
+                           barBalls.forEach((ball, i) => {
+                              const dist = (i + 1) * 14;
+                              ball.setPosition(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
+                           });
+                        }});
+                        // Add collision via an enemy sprite that follows the end ball
+                        const fireHitbox = this.enemies.create(x, y, 'firebar_ball') as Phaser.Physics.Arcade.Sprite;
+                        (fireHitbox.body as any).allowGravity = false;
+                        fireHitbox.setAlpha(0);
+                        this.time.addEvent({ delay: 30, loop: true, callback: () => {
+                           if (barBalls.length > 0) {
+                              const lastBall = barBalls[barBalls.length - 1];
+                              fireHitbox.setPosition(lastBall.x, lastBall.y);
+                           }
+                        }});
+                        break;
+                     }
+                     case 'lakitu': {
+                        const lak = this.enemies.create(x, y, 'lakitu') as Phaser.Physics.Arcade.Sprite;
+                        (lak.body as any).allowGravity = false;
+                        lak.setVelocityX(30);
+                        lak.setData('dir', 30);
+                        // Float and periodically drop spinies (goombas as stand-in)
+                        this.tweens.add({ targets: lak, y: y - 20, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                        this.time.addEvent({ delay: 3000 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                           if (!lak.active || this.gameOver || this.gameWon) return;
+                           const spiny = this.enemies.create(lak.x, lak.y + 16, 'enemy') as Phaser.Physics.Arcade.Sprite;
+                           (spiny.body as any).allowGravity = true;
+                           spiny.setVelocityX(Phaser.Math.Between(-60, 60));
+                        }});
+                        break;
+                     }
+                     case 'chain_chomp': {
+                        const chomp = this.enemies.create(x, y, 'chain_chomp') as Phaser.Physics.Arcade.Sprite;
+                        (chomp.body as any).allowGravity = false;
+                        chomp.setData('originX', x);
+                        chomp.setData('originY', y);
+                        // Lunge behavior
+                        this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 500), loop: true, callback: () => {
+                           if (!chomp.active || this.gameOver || this.gameWon) return;
+                           // Lunge toward closest player direction
+                           const targetX = (this.p1 && this.p1.active) ? this.p1.x : x;
+                           const dir = targetX > x ? 1 : -1;
+                           this.tweens.add({ targets: chomp, x: x + dir * 64, duration: 300, yoyo: true, ease: 'Quad.easeOut' });
+                        }});
+                        break;
+                     }
+                     case 'ice_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 const iceB = this.blocks.create(x + dc * B, y + dr * B, 'ice_block') as Phaser.Physics.Arcade.Sprite;
+                                 iceB.setData('slippery', true);
+                              }
+                           }
+                        } else {
+                           const iceB = this.blocks.create(x, y, 'ice_block') as Phaser.Physics.Arcade.Sprite;
+                           iceB.setData('slippery', true);
+                        }
+                        break;
+                     }
+                     case 'bounce_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 const bounceB = this.blocks.create(x + dc * B, y + dr * B, 'bounce_block') as Phaser.Physics.Arcade.Sprite;
+                                 bounceB.setData('bouncy', true);
+                              }
+                           }
+                        } else {
+                           const bounceB = this.blocks.create(x, y, 'bounce_block') as Phaser.Physics.Arcade.Sprite;
+                           bounceB.setData('bouncy', true);
+                        }
+                        break;
+                     }
+                     case 'breakable_block': {
+                        if (objWidth > 1 || objHeight > 1) {
+                           for (let dc = 0; dc < objWidth; dc++) {
+                              for (let dr = 0; dr < objHeight; dr++) {
+                                 const breakB = this.blocks.create(x + dc * B, y + dr * B, 'breakable_block') as Phaser.Physics.Arcade.Sprite;
+                                 breakB.setData('breakable', true);
+                              }
+                           }
+                        } else {
+                           const breakB = this.blocks.create(x, y, 'breakable_block') as Phaser.Physics.Arcade.Sprite;
+                           breakB.setData('breakable', true);
+                        }
+                        break;
+                     }
+                     case 'flag_pole':
+                        this.flags.create(x, y, 'flag');
+                        break;
+                     case 'castle':
+                        buildCastle(x - B * 2);
+                        break;
+                     case 'bush':
+                        this.add.image(x, y, 'hill').setScale(0.8).setDepth(-3).setData('decoration', true);
+                        break;
+                     case 'cloud':
+                        this.add.image(x, y, 'cloud').setScale(0.8).setDepth(-5).setData('decoration', true);
+                        break;
+                     case 'hill':
+                        this.add.image(x, y, 'hill').setScale(1.2).setDepth(-3).setData('decoration', true);
+                        break;
+                     default:
+                        console.warn(`[generateCustomLevel] Unrecognized object type: "${(obj as any).type}" at col=${obj.col}, row=${obj.row}. Skipping.`);
+                        break;
+                  }
+               }
+
+               // Spawn players at standard positions
+               if (this.p1 && this.p2) {
+                  this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0);
+                  this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+               }
+
+               // Start level timer
+               this.levelTimer = 120;
+               if (this.timerEvent) this.timerEvent.destroy();
+               this.timerEvent = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
+                  if (this.gameOver || this.gameWon || this.countingDown) return;
+                  this.levelTimer--;
+                  if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
+                     this.takeDamage(this.myPlayer);
+                  }
+               }});
+            }
+
             musicPowerUp() { this.playPowerUpSound(); }
             playBrickSound() {
                 if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
@@ -1612,7 +1645,21 @@ export default function PhaserGame({
 
                this.uiText.setText('');
             }
-            touchFlag(player: any, flag: any) { const playerRole = (player === this.p1) ? 'p1' : 'p2'; if (playerRole !== role) return; if (this.finishedSet.has(playerRole)) return; socket.emit('flagTouched', playerRole); this.playVictorySound(); }
+            touchFlag(player: any, flag: any) {
+               const playerRole = (player === this.p1) ? 'p1' : 'p2';
+               if (playerRole !== role) return;
+               if (this.finishedSet.has(playerRole)) return;
+               if (this.playingCustomFromLibrary) {
+                  // Custom level played from library: show victory and return to menu
+                  this.playVictorySound();
+                  this.gameWon = true;
+                  this.add.text(400, 200, '🎉 LEVEL COMPLETE! 🎉', { fontSize: '36px', color: '#ffd700', stroke: '#000', strokeThickness: 4, fontStyle: 'bold', align: 'center' }).setOrigin(0.5).setScrollFactor(0).setDepth(200);
+                  this.time.delayedCall(3000, () => { socket.emit('customLevelVictory'); onExit?.(); });
+                  return;
+               }
+               socket.emit('flagTouched', playerRole);
+               this.playVictorySound();
+            }
             createJoystick() {}
             takeDamage(player: any) { if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
@@ -1861,15 +1908,15 @@ export default function PhaserGame({
    return (
       <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'none' } as React.CSSProperties}>
          <div ref={gameRef} style={{ width: '100%', height: '100%' }} />
-         {/* D-Pad */}
-         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
+         {/* D-Pad — hidden in editor mode */}
+         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
             <div /><button data-action="jump" style={btnStyle('rgba(60,60,200,0.82)')}>▲</button><div />
             <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
-         </div>
-         {/* JUMP action button on opposite side */}
-         <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
+         </div>}
+         {/* JUMP action button on opposite side — hidden in editor mode */}
+         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
             <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
-         </div>
+         </div>}
          {/* Save Game Button popup on bottom right */}
          {showSaveBtn && (
             <button

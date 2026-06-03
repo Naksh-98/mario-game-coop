@@ -15,7 +15,7 @@ let state = {
   p1: { x: 150, y: 360, anim: 'run1', flipX: false, connected: false },
   p2: { x: 80, y: 360, anim: 'run1', flipX: false, connected: false },
 };
-let currentLevel = 4;
+let currentLevel = 1;
 let finishedPlayers = new Set(); // tracks who touched the flag this level
 let levelTransitionTime = 0; // timestamp of last level transition
 
@@ -45,6 +45,10 @@ app.prepare().then(() => {
     socket.on('setServerLevel', (level) => {
       currentLevel = level;
       io.to('game').emit('loadLevel', currentLevel);
+    });
+
+    socket.on('loadCustomLevel', (levelId) => {
+      io.to('game').emit('loadCustomLevel', levelId);
     });
 
     socket.on('updateState', ({ role, x, y, anim, flipX, scale }) => {
@@ -78,7 +82,7 @@ app.prepare().then(() => {
       // One player died — broadcast game over to everyone
       io.to('game').emit('gameOver');
       // Reset server state for next game
-      currentLevel = 4;
+      currentLevel = 1;
       finishedPlayers.clear();
       levelTransitionTime = 0;
       state.p1 = { x: 150, y: 360, anim: 'run1', flipX: false, connected: false };
