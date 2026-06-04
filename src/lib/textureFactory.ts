@@ -3,8 +3,8 @@
  * Shared between MainScene (gameplay) and LevelEditorScene (palette thumbnails).
  */
 
-function drawPlayer(scene: Phaser.Scene, key: string, shirtCol: number, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
-  const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
+function drawPlayer(scene: Phaser.Scene, key: string, shirtCol: number, frameType: 'run1' | 'run2' | 'jump' | 'crouch', overallsCol: number = 0x1e90ff) {
+  const skin = 0xffdab9; const overalls = overallsCol; const hat = shirtCol; const shoes = 0x8b4513;
   const g = scene.make.graphics({ x: 0, y: 0 }, false); const p = 2;
 
   if (frameType === 'crouch') {
@@ -33,8 +33,8 @@ function drawPlayer(scene: Phaser.Scene, key: string, shirtCol: number, frameTyp
   g.generateTexture(key, 13 * p, 17 * p); g.destroy();
 }
 
-function drawPrincess(scene: Phaser.Scene, key: string, frameType: 'run1' | 'run2' | 'jump' | 'crouch') {
-  const skin = 0xffdab9; const hair = 0xffe066; const dress = 0xffb6c1; const trim = 0xff1493;
+function drawPrincess(scene: Phaser.Scene, key: string, frameType: 'run1' | 'run2' | 'jump' | 'crouch', dressCol: number = 0xffb6c1) {
+  const skin = 0xffdab9; const hair = 0xffe066; const dress = dressCol; const trim = 0xff1493;
   const crown = 0xffd700; const jewel = 0x00bfff; const shoes = 0xe52458; const legs = 0xffffff;
   const g = scene.make.graphics({ x: 0, y: 0 }, false); const p = 2;
 
@@ -459,6 +459,17 @@ export function createTextures(scene: Phaser.Scene): void {
   drawPlayer(scene, 'p1_run1', 0xd50000, 'run1'); drawPlayer(scene, 'p1_run2', 0xd50000, 'run2'); drawPlayer(scene, 'p1_jump', 0xd50000, 'jump'); drawPlayer(scene, 'p1_crouch', 0xd50000, 'crouch');
   drawPrincess(scene, 'p2_run1', 'run1'); drawPrincess(scene, 'p2_run2', 'run2'); drawPrincess(scene, 'p2_jump', 'jump'); drawPrincess(scene, 'p2_crouch', 'crouch');
 
+  // Fire-power outfits: P1 = white hat/shirt + red overalls (classic Fire Mario), P2 = white/red fire dress
+  drawPlayer(scene, 'p1_fire_run1', 0xffffff, 'run1', 0xd50000); drawPlayer(scene, 'p1_fire_run2', 0xffffff, 'run2', 0xd50000); drawPlayer(scene, 'p1_fire_jump', 0xffffff, 'jump', 0xd50000); drawPlayer(scene, 'p1_fire_crouch', 0xffffff, 'crouch', 0xd50000);
+  drawPrincess(scene, 'p2_fire_run1', 'run1', 0xffffff); drawPrincess(scene, 'p2_fire_run2', 'run2', 0xffffff); drawPrincess(scene, 'p2_fire_jump', 'jump', 0xffffff); drawPrincess(scene, 'p2_fire_crouch', 'crouch', 0xffffff);
+
+  // Player fireball projectile texture
+  const gPFire = scene.make.graphics({ x: 0, y: 0 }, false);
+  gPFire.fillStyle(0xff4400, 1); gPFire.fillCircle(8, 8, 8);
+  gPFire.fillStyle(0xffaa00, 1); gPFire.fillCircle(8, 8, 5);
+  gPFire.fillStyle(0xffff00, 1); gPFire.fillCircle(6, 6, 2.5);
+  gPFire.generateTexture('player_fireball', 16, 16); gPFire.destroy();
+
   // Death frames (X pose - arms up, legs spread)
   const drawDeath = (key: string, shirtCol: number) => {
     const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;
@@ -497,4 +508,6 @@ export function createTextures(scene: Phaser.Scene): void {
 
   scene.anims.create({ key: 'p1_run', frames: [{ key: 'p1_run1' }, { key: 'p1_run2' }], frameRate: 10, repeat: -1 });
   scene.anims.create({ key: 'p2_run', frames: [{ key: 'p2_run1' }, { key: 'p2_run2' }], frameRate: 10, repeat: -1 });
+  scene.anims.create({ key: 'p1_fire_run', frames: [{ key: 'p1_fire_run1' }, { key: 'p1_fire_run2' }], frameRate: 10, repeat: -1 });
+  scene.anims.create({ key: 'p2_fire_run', frames: [{ key: 'p2_fire_run1' }, { key: 'p2_fire_run2' }], frameRate: 10, repeat: -1 });
 }

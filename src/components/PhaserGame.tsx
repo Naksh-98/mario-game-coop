@@ -30,7 +30,7 @@ export default function PhaserGame({
 }) {
    const gameRef = useRef<HTMLDivElement>(null);
    // Shared joy-keys object — React buttons write here, Phaser reads here
-   const joyKeysRef = useRef({ left: false, right: false, down: false, jump: false });
+   const joyKeysRef = useRef({ left: false, right: false, down: false, jump: false, fire: false });
    const musicVolumeRef = useRef(musicVolume);
    const sfxVolumeRef = useRef(sfxVolume);
    useEffect(() => { musicVolumeRef.current = musicVolume; }, [musicVolume]);
@@ -38,6 +38,18 @@ export default function PhaserGame({
 
    const [showSaveBtn, setShowSaveBtn] = React.useState(false);
    const [saveData, setSaveData] = React.useState<any>(null);
+   const [hasFirePower, setHasFirePower] = React.useState(false);
+
+   React.useEffect(() => {
+      const handler = () => setHasFirePower(true);
+      const clearHandler = () => setHasFirePower(false);
+      window.addEventListener('marioFirePowerOn', handler);
+      window.addEventListener('marioFirePowerOff', clearHandler);
+      return () => {
+         window.removeEventListener('marioFirePowerOn', handler);
+         window.removeEventListener('marioFirePowerOff', clearHandler);
+      };
+   }, []);
 
    React.useEffect(() => {
       const handler = (e: Event) => {
@@ -130,6 +142,7 @@ export default function PhaserGame({
             obstacles!: Phaser.Physics.Arcade.StaticGroup;
             enemies!: Phaser.Physics.Arcade.Group;
             fireballs!: Phaser.Physics.Arcade.Group;
+            playerFireballs!: Phaser.Physics.Arcade.Group;
             mushrooms!: Phaser.Physics.Arcade.Group;
             piranhas!: Phaser.Physics.Arcade.Group;
             movingPlatforms!: Phaser.Physics.Arcade.Group;
@@ -154,6 +167,9 @@ export default function PhaserGame({
 
             joyKeys = joyKeysRef.current;
             prevJump = false;
+            prevFire = false;
+            hasFire = false;
+            lastFireTime = 0;
 
             hearts = 3;
             gameOver = false;
@@ -370,6 +386,7 @@ export default function PhaserGame({
                this.obstacles = this.physics.add.staticGroup();
                this.enemies = this.physics.add.group();
                this.fireballs = this.physics.add.group();
+               this.playerFireballs = this.physics.add.group({ allowGravity: true });
                this.mushrooms = this.physics.add.group({ allowGravity: true });
                this.piranhas = this.physics.add.group({ allowGravity: false });
                this.movingPlatforms = this.physics.add.group({ immovable: true, allowGravity: false });
@@ -407,6 +424,10 @@ export default function PhaserGame({
                this.physics.add.overlap(this.p2, this.enemies, this.hitEnemy as any, undefined, this);
                this.physics.add.overlap(this.p1, this.fireballs, () => this.takeDamage(this.p1), undefined, this);
                this.physics.add.overlap(this.p2, this.fireballs, () => this.takeDamage(this.p2), undefined, this);
+               // Player fireballs bounce on blocks and destroy enemies
+               this.physics.add.collider(this.playerFireballs, this.blocks, (fb: any) => { fb.setVelocityY(-220); });
+               this.physics.add.collider(this.playerFireballs, this.movingPlatforms, (fb: any) => { fb.setVelocityY(-220); });
+               this.physics.add.overlap(this.playerFireballs, this.enemies, this.fireballHitEnemy as any, undefined, this);
                this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
                this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
                this.physics.add.overlap(this.p1, this.flags, this.touchFlag as any, undefined, this);
@@ -443,10 +464,11 @@ export default function PhaserGame({
                   if (st[opRole]) {
                      this.otherPlayer.setX(st[opRole].x); this.otherPlayer.setY(st[opRole].y);
                      this.otherPlayer.setFlipX(st[opRole].flipX); this.otherPlayer.setScale(st[opRole].scale || 1);
+                     const oSkin = st[opRole].fire ? 'fire_' : '';
                      if (st[opRole].anim === 'crouch') { this.otherPlayer.setBodySize(18, 16); this.otherPlayer.setOffset(4, 18); }
                      else { this.otherPlayer.setBodySize(18, 28); this.otherPlayer.setOffset(4, 6); }
-                     if (st[opRole].anim === 'run') { if (!this.otherPlayer.anims.isPlaying) this.otherPlayer.play(`${opRole}_run`); }
-                     else { this.otherPlayer.anims.stop(); this.otherPlayer.setTexture(`${opRole}_${st[opRole].anim}`); }
+                     if (st[opRole].anim === 'run') { if (!this.otherPlayer.anims.isPlaying || !this.otherPlayer.anims.currentAnim?.key.includes(oSkin)) this.otherPlayer.play(`${opRole}_${oSkin}run`); }
+                     else { this.otherPlayer.anims.stop(); this.otherPlayer.setTexture(`${opRole}_${oSkin}${st[opRole].anim}`); }
                   }
                });
 
@@ -507,6 +529,9 @@ export default function PhaserGame({
                         this.playAudio(784, 'square', 0.1); setTimeout(() => this.playAudio(880, 'square', 0.1), 100); setTimeout(() => this.playAudio(988, 'square', 0.1), 200); setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
                         this.tweens.add({ targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
                            this.countdownText.setAlpha(0); this.countingDown = false; this.waitingForOther = false; this.finishedSet.clear(); this.level = nextLvl; this.gameWon = false;
+                           // Reset fire power on new level
+                           this.hasFire = false; this.p1.setData('fireOutfit', false); this.p2.setData('fireOutfit', false);
+                           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
                            // For level 4 (pillar platforming), spawn from the sky to land on first pillar
                            if (nextLvl === 4) {
                               this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0); this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
@@ -1580,9 +1605,70 @@ export default function PhaserGame({
                 osc3.start(now + 0.04); osc3.stop(now + 0.12);
              }
             hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
-            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up'); if (is1Up) { const mush = this.mushrooms.create(block.x, block.y - 28, 'mushroom_1up') as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', true); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); return; } const roll = Math.random(); let tex: string; let itemType: string; if (roll < 0.30) { tex = 'power_mushroom'; itemType = 'power'; } else if (roll < 0.45) { tex = 'poison_mushroom'; itemType = 'poison'; } else if (roll < 0.65) { tex = 'invincibility_star'; itemType = 'star'; } else if (roll < 0.80) { tex = 'fire_flower'; itemType = 'fire_flower'; } else { tex = 'mushroom'; itemType = 'power'; } const item = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; item.setData('itemType', itemType); item.setVelocityX(itemType === 'star' ? 120 : 80); item.setBounceX(1); item.setCollideWorldBounds(true); if (itemType === 'star') { item.setBounceY(0.8); } } }
-            collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (itemType === '1up') { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.activateStarPower(player); } else if (itemType === 'fire_flower') { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); player.setTint(0xff8800); this.time.delayedCall(500, () => player.clearTint()); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up'); if (is1Up) { const mush = this.mushrooms.create(block.x, block.y - 28, 'mushroom_1up') as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', true); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); return; } const roll = Math.random(); let tex: string; let itemType: string; if (roll < 0.35) { tex = 'power_mushroom'; itemType = 'power'; } else if (roll < 0.55) { tex = 'invincibility_star'; itemType = 'star'; } else if (roll < 0.75) { tex = 'fire_flower'; itemType = 'fire_flower'; } else { tex = 'mushroom'; itemType = 'power'; } const item = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; item.setData('itemType', itemType); item.setVelocityX(itemType === 'star' ? 120 : 80); item.setBounceX(1); item.setCollideWorldBounds(true); if (itemType === 'star') { item.setBounceY(0.8); } } }
+            collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (itemType === '1up') { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.activateStarPower(player); } else if (itemType === 'fire_flower') { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.givefirePower(player); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
             activateStarPower(player: any) { player.setData('starPower', true); const colors = [0xff0000, 0xffff00, 0x00ff00, 0x00ffff, 0xff00ff, 0xffffff]; let colorIdx = 0; const glitterEvent = this.time.addEvent({ delay: 80, loop: true, callback: () => { if (!player.active) return; player.setTint(colors[colorIdx % colors.length]); colorIdx++; } }); player.setData('glitterEvent', glitterEvent); this.time.delayedCall(30000, () => { player.setData('starPower', false); player.clearTint(); if (glitterEvent) glitterEvent.destroy(); }); }
+
+            givefirePower(player: any) {
+               // Only grant the fire button to the local player who collected it
+               if (player === this.myPlayer) {
+                  this.hasFire = true;
+                  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOn'));
+               }
+               // Switch the player sprite to the fire outfit
+               const pr = (player === this.p1) ? 'p1' : 'p2';
+               player.setData('fireOutfit', true);
+               const flash = this.add.graphics().setDepth(20);
+               flash.fillStyle(0xffffff, 0.6); flash.fillCircle(player.x, player.y, 30);
+               this.tweens.add({ targets: flash, alpha: 0, duration: 400, onComplete: () => flash.destroy() });
+            }
+
+            shootFireball() {
+               if (!this.hasFire || this.gameOver || this.gameWon || this.countingDown) return;
+               const now = Date.now();
+               if (now - this.lastFireTime < 400) return; // cooldown
+               this.lastFireTime = now;
+               const dir = this.myPlayer.flipX ? -1 : 1;
+               const fb = this.playerFireballs.create(this.myPlayer.x + dir * 16, this.myPlayer.y, 'player_fireball') as Phaser.Physics.Arcade.Sprite;
+               (fb.body as any).allowGravity = true;
+               fb.setVelocityX(dir * 400);
+               fb.setVelocityY(120);
+               (fb.body as any).setBounceY(0.8);
+               fb.setData('owner', role);
+               try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {}
+               // Destroy after 2.5 seconds
+               this.time.delayedCall(2500, () => { if (fb && fb.active) fb.destroy(); });
+               // Spinning visual
+               this.tweens.add({ targets: fb, angle: 360, duration: 300, repeat: -1 });
+            }
+
+            fireballHitEnemy(fireball: any, enemy: any) {
+               if (!fireball.active || !enemy.active) return;
+               if (enemy.getData('isBoss')) {
+                  // Damage boss
+                  let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp);
+                  enemy.setAlpha(0.5); this.time.delayedCall(150, () => { if (enemy.active) enemy.setAlpha(1); });
+                  const barFill = enemy.getData('barFill'); if (barFill) barFill.width = Math.max(0, (hp / 20) * 300);
+                  fireball.destroy();
+                  this.addScore(500);
+                  if (hp <= 0) {
+                     const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText');
+                     if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy();
+                     enemy.destroy();
+                     if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); }
+                     this.gameWon = true; this.showHugAnimation();
+                  }
+                  return;
+               }
+               // Regular enemy: destroy it with a little flip effect
+               fireball.destroy();
+               this.playStompSound();
+               this.addScore(1000);
+               enemy.setVelocityY(-300);
+               (enemy.body as any).checkCollision.none = true;
+               enemy.setFlipY(true);
+               this.tweens.add({ targets: enemy, alpha: 0, angle: 180, duration: 500, onComplete: () => enemy.destroy() });
+            }
             collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
@@ -1705,7 +1791,7 @@ export default function PhaserGame({
                this.playVictorySound();
             }
             createJoystick() {}
-            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
             deathAnimation(player: any) {
                player.setVelocity(0, 0); (player.body as any).allowGravity = false;
@@ -1793,20 +1879,25 @@ export default function PhaserGame({
                const isJumpHeld = this.cursors.up.isDown || this.keyW.isDown || this.cursors.space.isDown || this.joyKeys.jump;
                const isJumpJustDown = isJumpHeld && !this.prevJump; this.prevJump = isJumpHeld;
                const isCrouch = this.cursors.down.isDown || this.keyS.isDown || this.joyKeys.down;
+               // Fire input (F key or fire button) — only works when fire power is active
+               const isFireHeld = (this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.F)?.isDown) || this.joyKeys.fire;
+               const isFireJustDown = isFireHeld && !this.prevFire; this.prevFire = isFireHeld;
+               if (isFireJustDown) this.shootFireball();
                const onGround = this.myPlayer.body.touching.down;
                let animState = 'run1';
+               const skin = this.hasFire ? 'fire_' : '';
 
                if (isCrouch && onGround) { this.myPlayer.setVelocityX(0); this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18); animState = 'crouch'; this.myPlayer.anims.stop(); }
                else {
                   this.myPlayer.setBodySize(18, 28); this.myPlayer.setOffset(4, 6);
-                  if (isLeft) { this.myPlayer.setVelocityX(-250); this.myPlayer.setFlipX(true); if (onGround) { animState = 'run'; this.myPlayer.play(`${role}_run`, true); } }
-                  else if (isRight) { this.myPlayer.setVelocityX(250); this.myPlayer.setFlipX(false); if (onGround) { animState = 'run'; this.myPlayer.play(`${role}_run`, true); } }
+                  if (isLeft) { this.myPlayer.setVelocityX(-250); this.myPlayer.setFlipX(true); if (onGround) { animState = 'run'; this.myPlayer.play(`${role}_${skin}run`, true); } }
+                  else if (isRight) { this.myPlayer.setVelocityX(250); this.myPlayer.setFlipX(false); if (onGround) { animState = 'run'; this.myPlayer.play(`${role}_${skin}run`, true); } }
                   else { this.myPlayer.setVelocityX(0); animState = 'run1'; this.myPlayer.anims.stop(); }
                   if (isJumpJustDown && onGround) { this.myPlayer.setVelocityY(-750); this.playJumpSound(); }
                   if (!isJumpHeld && this.myPlayer.body.velocity.y < -200) this.myPlayer.setVelocityY(this.myPlayer.body.velocity.y * 0.8);
                   if (!onGround) { animState = 'jump'; this.myPlayer.anims.stop(); }
                }
-               if (animState !== 'run') this.myPlayer.setTexture(`${role}_${animState}`);
+               if (animState !== 'run') this.myPlayer.setTexture(`${role}_${skin}${animState}`);
 
                const targetX = Math.max(Math.min(this.p1.x, this.p2.x) + 300, this.cameras.main.scrollX + 400);
                // Don't override camera during boss auto-scroll
@@ -1881,7 +1972,7 @@ export default function PhaserGame({
                   }
                });
 
-               socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale });
+               socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale, fire: this.hasFire });
                const timerDisplay = this.levelTimer >= 0 ? `⏱${Math.floor(this.levelTimer / 60)}:${(this.levelTimer % 60).toString().padStart(2, '0')}` : `⏱0:00`;
                const heartsDisplay = `❤️×${this.hearts}`;
                this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}`);
@@ -1958,7 +2049,8 @@ export default function PhaserGame({
             <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
          </div>}
          {/* JUMP action button on opposite side — hidden in editor mode */}
-         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10 }}>
+         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+            {hasFirePower && <button data-action="fire" style={{ ...btnStyle('rgba(255,140,0,0.92)'), width: 64, height: 64, fontSize: 13 }}>FIRE</button>}
             <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
          </div>}
          {/* Save Game Button popup on bottom right */}
