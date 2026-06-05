@@ -456,6 +456,8 @@ export default function PhaserGame({
                      const opRole = role === 'p1' ? 'p2' : 'p1';
                      if (data.state[opRole]) { this.otherPlayer.setX(data.state[opRole].x); this.otherPlayer.setY(data.state[opRole].y); }
                   }
+                  // P1 is the authority for the shared hearts pool — broadcast on join
+                  if (role === 'p1') { socket.emit('syncHearts', this.hearts); }
                });
 
                socket.on('stateUpdate', (st: any) => {
@@ -563,6 +565,11 @@ export default function PhaserGame({
                   } catch (e) { console.warn('Failed to load custom level:', e); }
                });
                socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
+
+               // Shared HP: receive updated hearts from the other player
+               socket.on('syncHearts', (hearts: number) => { this.hearts = hearts; });
+               // Shared 1UP popup: show on this screen when the other player triggers it
+               socket.on('oneUp', () => { this.show1Up(true); });
 
                this.startBGM();
                this.generateLevel(this.level);
@@ -1671,7 +1678,7 @@ export default function PhaserGame({
             }
             collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
-             show1Up() { this.playPowerUpSound(); const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
+             show1Up(remote: boolean = false) { this.playPowerUpSound(); if (!remote) { try { socket.emit('oneUp'); socket.emit('syncHearts', this.hearts); } catch (e) {} } const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
              hitEnemy(player: any, enemy: any) { if (player.getData('starPower')) { enemy.destroy(); this.playStompSound(); this.addScore(1000); return; } if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
 
             showHugAnimation() {
@@ -1791,7 +1798,7 @@ export default function PhaserGame({
                this.playVictorySound();
             }
             createJoystick() {}
-            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; socket.emit('syncHearts', this.hearts); if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
             deathAnimation(player: any) {
                player.setVelocity(0, 0); (player.body as any).allowGravity = false;

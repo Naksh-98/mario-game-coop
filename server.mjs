@@ -109,6 +109,16 @@ app.prepare().then(() => {
       io.to('game').emit('loadCustomLevel', levelId);
     });
 
+    // Sync shared hearts pool between both players
+    socket.on('syncHearts', (hearts) => {
+      socket.broadcast.to('game').emit('syncHearts', hearts);
+    });
+
+    // Relay 1UP popup so both players see it
+    socket.on('oneUp', () => {
+      socket.broadcast.to('game').emit('oneUp');
+    });
+
     socket.on('updateState', ({ role, x, y, anim, flipX, scale }) => {
       if (role === 'p1' || role === 'p2') {
         state[role] = { ...state[role], x, y, anim, flipX, scale };
