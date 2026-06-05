@@ -6,18 +6,40 @@ import dynamic from 'next/dynamic';
 const PhaserGame = dynamic(() => import('@/components/PhaserGame'), { ssr: false });
 const MiniGame = dynamic(() => import('@/components/MiniGame'), { ssr: false });
 
+interface BtnPos { x: number; y: number }
+interface ButtonLayout {
+  up: BtnPos; down: BtnPos; left: BtnPos; right: BtnPos; jump: BtnPos; fire: BtnPos;
+}
+
 interface GameSettings {
   musicVol: number;   // 0-1
   sfxVol: number;     // 0-1
   btnPos: 'left' | 'right';
+  buttonLayout?: ButtonLayout | null;  // custom positions; null = use btnPos default
 }
+
+const DEFAULT_SETTINGS: GameSettings = { musicVol: 0.5, sfxVol: 0.7, btnPos: 'left', buttonLayout: null };
 
 function loadSettings(): GameSettings {
   try {
     const s = localStorage.getItem('mario_settings');
-    if (s) return { ...{ musicVol: 0.5, sfxVol: 0.7, btnPos: 'left' }, ...JSON.parse(s) };
+    if (s) return { ...DEFAULT_SETTINGS, ...JSON.parse(s) };
   } catch { }
-  return { musicVol: 0.5, sfxVol: 0.7, btnPos: 'left' };
+  return { ...DEFAULT_SETTINGS };
+}
+
+function defaultLayout(side: 'left' | 'right'): ButtonLayout {
+  // D-pad cluster on one side, action buttons on the other
+  if (side === 'left') {
+    return {
+      up: { x: 10, y: 70 }, down: { x: 10, y: 88 }, left: { x: 4, y: 88 }, right: { x: 16, y: 88 },
+      jump: { x: 90, y: 84 }, fire: { x: 90, y: 64 },
+    };
+  }
+  return {
+    up: { x: 90, y: 70 }, down: { x: 90, y: 88 }, left: { x: 84, y: 88 }, right: { x: 96, y: 88 },
+    jump: { x: 10, y: 84 }, fire: { x: 10, y: 64 },
+  };
 }
 
 export default function Home() {
@@ -25,7 +47,11 @@ export default function Home() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [blinkOn, setBlinkOn] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<GameSettings>({ musicVol: 0.5, sfxVol: 0.7, btnPos: 'left' });
+  const [showCustomize, setShowCustomize] = useState(false);
+  const [customLayout, setCustomLayout] = useState<ButtonLayout>(defaultLayout('left'));
+  const draggingKeyRef = useRef<keyof ButtonLayout | null>(null);
+  const [gameZoom, setGameZoom] = useState(1);
+  const [settings, setSettings] = useState<GameSettings>({ ...DEFAULT_SETTINGS });
   const [loadedSave, setLoadedSave] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -158,6 +184,22 @@ export default function Home() {
     window.scrollTo(0, 1);
   }
 
+  // ─── Customize controls drag handlers ─────────────────────────────────────────
+  const openCustomize = useCallback(() => {
+    setCustomLayout(settings.buttonLayout ?? defaultLayout(settings.btnPos));
+    setShowSettings(false);
+    setShowCustomize(true);
+  }, [settings.buttonLayout, settings.btnPos]);
+
+  const handleCustomizePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!draggingKeyRef.current) return;
+    const x = Math.max(3, Math.min(97, (e.clientX / window.innerWidth) * 100));
+    const y = Math.max(8, Math.min(95, (e.clientY / window.innerHeight) * 100));
+    setCustomLayout(l => ({ ...l, [draggingKeyRef.current!]: { x, y } }));
+  }, []);
+
+  const handleCustomizePointerUp = useCallback(() => { draggingKeyRef.current = null; }, []);
+
   // ─── Slider style helper ─────────────────────────────────────────────────────
   const sliderStyle: React.CSSProperties = {
     WebkitAppearance: 'none', appearance: 'none',
@@ -165,6 +207,56 @@ export default function Home() {
     background: 'rgba(255,255,255,0.15)',
     outline: 'none', cursor: 'pointer',
   };
+
+  // ─── Customize Controls Overlay ───────────────────────────────────────────────
+  const startDrag = (key: keyof ButtonLayout) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    draggingKeyRef.current = key;
+  };
+
+  const dragBtnStyle = (color: string, x: number, y: number, size: number, fontSize: number): React.CSSProperties => ({
+    position: 'absolute', left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)',
+    width: size, height: size, borderRadius: '50%', background: color,
+    border: '3px dashed rgba(255,255,255,0.8)', color: '#fff', fontSize, fontWeight: 'bold',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none',
+    userSelect: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.5)', zIndex: 2001,
+  });
+
+  const CustomizeControls = () => (
+    <div
+      onPointerMove={handleCustomizePointerMove}
+      onPointerUp={handleCustomizePointerUp}
+      onPointerCancel={handleCustomizePointerUp}
+      style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.85)', touchAction: 'none' }}
+    >
+      <div style={{ position: 'absolute', top: 20, left: 0, right: 0, textAlign: 'center', color: '#ffd700', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '1.1rem', textShadow: '2px 2px 0 #000' }}>
+        Drag each button where you want it
+      </div>
+
+      <div style={dragBtnStyle('rgba(60,60,200,0.82)', customLayout.up.x, customLayout.up.y, 64, 22)} onPointerDown={startDrag('up')}>▲</div>
+      <div style={dragBtnStyle('rgba(60,60,200,0.82)', customLayout.down.x, customLayout.down.y, 64, 22)} onPointerDown={startDrag('down')}>▼</div>
+      <div style={dragBtnStyle('rgba(60,60,200,0.82)', customLayout.left.x, customLayout.left.y, 64, 22)} onPointerDown={startDrag('left')}>◀</div>
+      <div style={dragBtnStyle('rgba(60,60,200,0.82)', customLayout.right.x, customLayout.right.y, 64, 22)} onPointerDown={startDrag('right')}>▶</div>
+      <div style={dragBtnStyle('rgba(210,30,30,0.88)', customLayout.jump.x, customLayout.jump.y, 72, 14)} onPointerDown={startDrag('jump')}>JUMP</div>
+      <div style={dragBtnStyle('rgba(255,140,0,0.92)', customLayout.fire.x, customLayout.fire.y, 64, 13)} onPointerDown={startDrag('fire')}>FIRE</div>
+
+      <div style={{ position: 'absolute', bottom: 20, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: '1rem', zIndex: 2002 }}>
+        <button
+          onClick={() => { setSettings(s => ({ ...s, buttonLayout: customLayout })); setShowCustomize(false); setShowSettings(true); }}
+          style={{ padding: '0.8rem 1.6rem', borderRadius: 10, cursor: 'pointer', background: 'linear-gradient(135deg, #ffd700, #ff8c00)', border: 'none', color: '#000', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '1rem' }}
+        >
+          ✓ Save Layout
+        </button>
+        <button
+          onClick={() => { setShowCustomize(false); setShowSettings(true); }}
+          style={{ padding: '0.8rem 1.6rem', borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.3)', color: '#fff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '1rem' }}
+        >
+          ✕ Cancel
+        </button>
+      </div>
+    </div>
+  );
 
   // ─── Settings Modal ──────────────────────────────────────────────────────────
   const SettingsModal = () => (
@@ -256,6 +348,35 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Customize Controls */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <button
+            onClick={openCustomize}
+            style={{
+              width: '100%', padding: '0.8rem', borderRadius: 10, cursor: 'pointer',
+              background: 'linear-gradient(135deg, #6a3de8, #3d5ee8)', border: '2px solid rgba(255,255,255,0.3)',
+              color: '#fff', fontFamily: 'monospace', fontSize: '0.95rem', fontWeight: 'bold',
+            }}
+          >
+            🕹️ Customize Button Layout
+          </button>
+          {settings.buttonLayout && (
+            <button
+              onClick={() => setSettings(s => ({ ...s, buttonLayout: null }))}
+              style={{
+                width: '100%', padding: '0.5rem', borderRadius: 8, cursor: 'pointer', marginTop: '0.5rem',
+                background: 'rgba(255,80,80,0.15)', border: '2px solid rgba(255,80,80,0.4)',
+                color: '#ff8080', fontFamily: 'monospace', fontSize: '0.8rem', fontWeight: 'bold',
+              }}
+            >
+              ↺ Reset to Default Layout
+            </button>
+          )}
+          <div style={{ color: '#aaa', fontSize: '0.75rem', marginTop: '0.5rem', textAlign: 'center' }}>
+            Drag buttons to set your own positions
+          </div>
+        </div>
+
         {/* Test SFX button */}
         <button
           onClick={playCoinSound}
@@ -286,6 +407,7 @@ export default function Home() {
         />
 
         {showSettings && <SettingsModal />}
+        {showCustomize && <CustomizeControls />}
 
         {/* Sky background */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, #5c94fc 0%, #5c94fc 60%, #8b4513 60%, #8b4513 100%)', zIndex: 0 }} />
@@ -442,23 +564,57 @@ export default function Home() {
   }
 
   return (
-    <main style={{ width: '100vw', height: '100dvh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#222', margin: 0, padding: 0, position: 'relative' }}>
+    <main style={{ width: '100vw', height: '100dvh', display: 'flex', justifyContent: 'center', alignItems: 'center', backgroundColor: '#222', margin: 0, padding: 0, position: 'relative', overflow: 'hidden' }}>
       <PhaserGame
         role={role as 'p1' | 'p2'}
         musicVolume={settings.musicVol}
         sfxVolume={settings.sfxVol}
         btnPos={settings.btnPos}
+        buttonLayout={settings.buttonLayout}
+        gameZoom={gameZoom}
         initialLevel={loadedSave ? loadedSave.level : 1}
         initialScore={loadedSave ? loadedSave.score : 0}
         initialHearts={loadedSave ? loadedSave.hearts : 3}
         initialCoins={loadedSave ? loadedSave.coinCount : 0}
       />
+      {/* Fullscreen button (disabled in favor of zoom controls)
       <button
         onClick={goFullscreen}
         style={{ position: 'absolute', top: '20px', right: '20px', padding: '10px 16px', fontSize: '1rem', backgroundColor: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '2px solid rgba(255, 255, 255, 0.3)', borderRadius: '8px', cursor: 'pointer', zIndex: 100, backdropFilter: 'blur(4px)' }}
       >
         ⛶ Fullscreen
       </button>
+      */}
+      {/* Zoom controls */}
+      <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '8px', zIndex: 100 }}>
+        <button
+          onClick={() => setGameZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+          style={{ width: 44, height: 44, fontSize: '1.4rem', fontWeight: 'bold', backgroundColor: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '2px solid rgba(255, 255, 255, 0.3)', borderRadius: '8px', cursor: 'pointer', backdropFilter: 'blur(4px)' }}
+        >
+          −
+        </button>
+        <button
+          onClick={() => setGameZoom(1)}
+          style={{ minWidth: 56, height: 44, fontSize: '0.85rem', fontWeight: 'bold', backgroundColor: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '2px solid rgba(255, 255, 255, 0.3)', borderRadius: '8px', cursor: 'pointer', backdropFilter: 'blur(4px)' }}
+        >
+          {Math.round(gameZoom * 100)}%
+        </button>
+        <button
+          onClick={() => setGameZoom(z => Math.min(2, Math.round((z + 0.1) * 10) / 10))}
+          style={{ width: 44, height: 44, fontSize: '1.4rem', fontWeight: 'bold', backgroundColor: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '2px solid rgba(255, 255, 255, 0.3)', borderRadius: '8px', cursor: 'pointer', backdropFilter: 'blur(4px)' }}
+        >
+          +
+        </button>
+      </div>
+      {/* Settings gear — below the zoom controls */}
+      <button
+        onClick={() => setShowSettings(true)}
+        style={{ position: 'absolute', top: '72px', right: '20px', width: 44, height: 44, fontSize: '1.3rem', backgroundColor: 'rgba(255, 255, 255, 0.1)', color: 'white', border: '2px solid rgba(255, 255, 255, 0.3)', borderRadius: '8px', cursor: 'pointer', backdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        ⚙️
+      </button>
+      {showSettings && <SettingsModal />}
+      {showCustomize && <CustomizeControls />}
     </main>
   );
 }

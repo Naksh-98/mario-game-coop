@@ -12,6 +12,8 @@ export default function PhaserGame({
    musicVolume = 0.5,
    sfxVolume = 0.7,
    btnPos = 'left',
+   buttonLayout = null,
+   gameZoom = 1,
    initialLevel = 1,
    initialScore = 0,
    initialHearts = 3,
@@ -22,6 +24,8 @@ export default function PhaserGame({
    musicVolume?: number;
    sfxVolume?: number;
    btnPos?: 'left' | 'right';
+   buttonLayout?: { up: { x: number; y: number }; down: { x: number; y: number }; left: { x: number; y: number }; right: { x: number; y: number }; jump: { x: number; y: number }; fire: { x: number; y: number } } | null;
+   gameZoom?: number;
    initialLevel?: number;
    initialScore?: number;
    initialHearts?: number;
@@ -280,6 +284,12 @@ export default function PhaserGame({
                else if (this.level === 5) key = 'level5';
                else if (this.level >= 6) key = 'level6';
                if (key) {
+                  // Only play if the audio has finished loading/decoding into cache.
+                  // Otherwise retry shortly (avoids "Audio key not found in cache" error).
+                  if (!this.cache.audio.exists(key)) {
+                     this.time.delayedCall(300, () => this.startBGM());
+                     return;
+                  }
                   try {
                      this.currentBgm = this.sound.add(key, { loop: true, volume: musicVolumeRef.current });
                      this.currentBgm.play();
@@ -1993,7 +2003,7 @@ export default function PhaserGame({
             }
          }
 
-         const config: Phaser.Types.Core.GameConfig = { type: Phaser.AUTO, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: 800, height: 480 }, parent: gameRef.current!, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 1600 }, debug: false } }, scene: [MainScene], backgroundColor: '#5c94fc' };
+         const config: Phaser.Types.Core.GameConfig = { type: Phaser.AUTO, scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.NO_CENTER, width: 800, height: 480 }, parent: gameRef.current!, physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 1600 }, debug: false } }, scene: [MainScene], backgroundColor: '#5c94fc' };
          game = new Phaser.Game(config);
       });
 
@@ -2056,17 +2066,29 @@ export default function PhaserGame({
 
    return (
       <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'none' } as React.CSSProperties}>
-         <div ref={gameRef} style={{ width: '100%', height: '100%' }} />
+         <div ref={gameRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: `scale(${gameZoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease-out' }} />
          {/* D-Pad — hidden in editor mode */}
-         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
-            <div /><button data-action="jump" style={btnStyle('rgba(60,60,200,0.82)')}>▲</button><div />
-            <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
-         </div>}
-         {/* JUMP action button on opposite side — hidden in editor mode */}
-         {role !== 'editor' && <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-            {hasFirePower && <button data-action="fire" style={{ ...btnStyle('rgba(255,140,0,0.92)'), width: 64, height: 64, fontSize: 13 }}>FIRE</button>}
-            <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
-         </div>}
+         {role !== 'editor' && (buttonLayout ? (
+            <div {...touchProps}>
+               <button data-action="jump" style={{ ...btnStyle('rgba(60,60,200,0.82)'), position: 'absolute', left: `${buttonLayout.up.x}%`, top: `${buttonLayout.up.y}%`, transform: 'translate(-50%,-50%)', zIndex: 10 }}>▲</button>
+               <button data-action="down" style={{ ...btnStyle('rgba(60,60,200,0.82)'), position: 'absolute', left: `${buttonLayout.down.x}%`, top: `${buttonLayout.down.y}%`, transform: 'translate(-50%,-50%)', zIndex: 10 }}>▼</button>
+               <button data-action="left" style={{ ...btnStyle('rgba(60,60,200,0.82)'), position: 'absolute', left: `${buttonLayout.left.x}%`, top: `${buttonLayout.left.y}%`, transform: 'translate(-50%,-50%)', zIndex: 10 }}>◀</button>
+               <button data-action="right" style={{ ...btnStyle('rgba(60,60,200,0.82)'), position: 'absolute', left: `${buttonLayout.right.x}%`, top: `${buttonLayout.right.y}%`, transform: 'translate(-50%,-50%)', zIndex: 10 }}>▶</button>
+               <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), position: 'absolute', left: `${buttonLayout.jump.x}%`, top: `${buttonLayout.jump.y}%`, transform: 'translate(-50%,-50%)', width: 72, height: 72, fontSize: 15, zIndex: 10 }}>JUMP</button>
+               {hasFirePower && <button data-action="fire" style={{ ...btnStyle('rgba(255,140,0,0.92)'), position: 'absolute', left: `${buttonLayout.fire.x}%`, top: `${buttonLayout.fire.y}%`, transform: 'translate(-50%,-50%)', width: 64, height: 64, fontSize: 13, zIndex: 10 }}>FIRE</button>}
+            </div>
+         ) : (
+            <>
+               <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'left' : 'right']: 30, bottom: 8, transform: 'translateY(-50%)', display: 'grid', gridTemplateColumns: 'repeat(3, 70px)', gridTemplateRows: 'repeat(2, 70px)', zIndex: 10 }}>
+                  <div /><button data-action="jump" style={btnStyle('rgba(60,60,200,0.82)')}>▲</button><div />
+                  <button data-action="left" style={btnStyle('rgba(60,60,200,0.82)')}>◀</button><button data-action="down" style={btnStyle('rgba(60,60,200,0.82)')}>▼</button><button data-action="right" style={btnStyle('rgba(60,60,200,0.82)')}>▶</button>
+               </div>
+               <div {...touchProps} style={{ position: 'absolute', [btnPos === 'left' ? 'right' : 'left']: 30, bottom: 8, transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                  {hasFirePower && <button data-action="fire" style={{ ...btnStyle('rgba(255,140,0,0.92)'), width: 64, height: 64, fontSize: 13 }}>FIRE</button>}
+                  <button data-action="jump" style={{ ...btnStyle('rgba(210,30,30,0.88)'), width: 72, height: 72, fontSize: 15 }}>JUMP</button>
+               </div>
+            </>
+         ))}
          {/* Save Game Button popup on bottom right */}
          {showSaveBtn && (
             <button
