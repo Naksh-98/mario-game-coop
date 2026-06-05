@@ -531,9 +531,6 @@ export default function PhaserGame({
                         this.playAudio(784, 'square', 0.1); setTimeout(() => this.playAudio(880, 'square', 0.1), 100); setTimeout(() => this.playAudio(988, 'square', 0.1), 200); setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
                         this.tweens.add({ targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
                            this.countdownText.setAlpha(0); this.countingDown = false; this.waitingForOther = false; this.finishedSet.clear(); this.level = nextLvl; this.gameWon = false;
-                           // Reset fire power on new level
-                           this.hasFire = false; this.p1.setData('fireOutfit', false); this.p2.setData('fireOutfit', false);
-                           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
                            // For level 4 (pillar platforming), spawn from the sky to land on first pillar
                            if (nextLvl === 4) {
                               this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0); this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
@@ -570,6 +567,8 @@ export default function PhaserGame({
                socket.on('syncHearts', (hearts: number) => { this.hearts = hearts; });
                // Shared 1UP popup: show on this screen when the other player triggers it
                socket.on('oneUp', () => { this.show1Up(true); });
+               // Teammate's fireball: spawn it on this screen too
+               socket.on('shootFireball', (d: any) => { this.spawnFireball(d.x, d.y, d.dir, d.owner); });
 
                this.startBGM();
                this.generateLevel(this.level);
@@ -1636,12 +1635,20 @@ export default function PhaserGame({
                if (now - this.lastFireTime < 400) return; // cooldown
                this.lastFireTime = now;
                const dir = this.myPlayer.flipX ? -1 : 1;
-               const fb = this.playerFireballs.create(this.myPlayer.x + dir * 16, this.myPlayer.y, 'player_fireball') as Phaser.Physics.Arcade.Sprite;
+               const sx = this.myPlayer.x + dir * 16;
+               const sy = this.myPlayer.y;
+               this.spawnFireball(sx, sy, dir, role);
+               // Tell the other player to spawn the same fireball
+               try { socket.emit('shootFireball', { x: sx, y: sy, dir, owner: role }); } catch (e) {}
+            }
+
+            spawnFireball(sx: number, sy: number, dir: number, owner: string) {
+               const fb = this.playerFireballs.create(sx, sy, 'player_fireball') as Phaser.Physics.Arcade.Sprite;
                (fb.body as any).allowGravity = true;
                fb.setVelocityX(dir * 400);
                fb.setVelocityY(120);
                (fb.body as any).setBounceY(0.8);
-               fb.setData('owner', role);
+               fb.setData('owner', owner);
                try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {}
                // Destroy after 2.5 seconds
                this.time.delayedCall(2500, () => { if (fb && fb.active) fb.destroy(); });

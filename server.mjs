@@ -119,9 +119,14 @@ app.prepare().then(() => {
       socket.broadcast.to('game').emit('oneUp');
     });
 
-    socket.on('updateState', ({ role, x, y, anim, flipX, scale }) => {
+    // Relay fireball shots so both players see teammate's fireballs
+    socket.on('shootFireball', (data) => {
+      socket.broadcast.to('game').emit('shootFireball', data);
+    });
+
+    socket.on('updateState', ({ role, x, y, anim, flipX, scale, fire }) => {
       if (role === 'p1' || role === 'p2') {
-        state[role] = { ...state[role], x, y, anim, flipX, scale };
+        state[role] = { ...state[role], x, y, anim, flipX, scale, fire };
         // Broadcast to game room
         socket.broadcast.to('game').emit('stateUpdate', state);
       }
