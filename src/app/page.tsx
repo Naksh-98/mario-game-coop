@@ -131,6 +131,15 @@ export default function Home() {
     } catch { }
   }, [settings.sfxVol]);
 
+  // Play selection sound when a menu option is confirmed/entered
+  const playSelectSound = useCallback(() => {
+    try {
+      const sfx = new Audio('/audio/whenmainmenueoptionselected.mp3');
+      sfx.volume = settings.sfxVol;
+      sfx.play().catch(() => { });
+    } catch { }
+  }, [settings.sfxVol]);
+
   // Blink the selector arrow
   useEffect(() => {
     if (role || showSettings) return;
@@ -151,6 +160,7 @@ export default function Home() {
     } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
       playCoinSound(); setSelectedIndex(i => (i === 5 ? 0 : i + 1));
     } else if (e.key === 'Enter' || e.key === ' ') {
+      playSelectSound();
       if (selectedIndex === 3) {
         setRole('editor');
       } else if (selectedIndex === 4) {
@@ -161,7 +171,7 @@ export default function Home() {
         setRole(selectedIndex === 0 ? 'p1' : selectedIndex === 1 ? 'p2' : 'mini');
       }
     }
-  }, [role, selectedIndex, showSettings, triggerAudioPlay, playCoinSound, handleLoadSaveGame]);
+  }, [role, selectedIndex, showSettings, triggerAudioPlay, playCoinSound, playSelectSound, handleLoadSaveGame]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -436,7 +446,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 0 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(0); setRole('p1'); }}
+                onClick={() => { playSelectSound(); setSelectedIndex(0); setRole('p1'); }}
                 style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 0 ? '#d50000' : '#660000', color: 'white', border: selectedIndex === 0 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 🍄 PLAYER 1 - MARIO
@@ -447,7 +457,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 1 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(1); setRole('p2'); }}
+                onClick={() => { playSelectSound(); setSelectedIndex(1); setRole('p2'); }}
                 style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 1 ? '#ff69b4' : '#8b0060', color: 'white', border: selectedIndex === 1 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 👸 PLAYER 2 - PRINCESS
@@ -458,7 +468,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 2 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(2); setRole('mini'); }}
+                onClick={() => { playSelectSound(); setSelectedIndex(2); setRole('mini'); }}
                 style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 2 ? '#ffd700' : '#8b6914', color: selectedIndex === 2 ? '#000' : '#fff', border: selectedIndex === 2 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 ⭐ MARIO MINIX - SURVIVAL
@@ -469,7 +479,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ width: 20, fontSize: '1.1rem', visibility: selectedIndex === 3 && blinkOn ? 'visible' : 'hidden' }}>▶</span>
               <div
-                onClick={() => { playCoinSound(); setSelectedIndex(3); setRole('editor'); }}
+                onClick={() => { playSelectSound(); setSelectedIndex(3); setRole('editor'); }}
                 style={{ padding: '0.4rem 1.5rem', fontSize: 'clamp(0.8rem, 1.8vw, 1.1rem)', backgroundColor: selectedIndex === 3 ? '#1565c0' : '#0d47a1', color: 'white', border: selectedIndex === 3 ? '2px solid #fff' : '2px solid #666', borderRadius: '6px', minWidth: '220px', textAlign: 'center', transition: 'all 0.2s', cursor: 'pointer' }}
               >
                 🎨 LEVEL EDITOR
@@ -518,6 +528,7 @@ export default function Home() {
         </div>
         <button
           onPointerDown={() => {
+            playSelectSound();
             if (selectedIndex === 3) {
               setRole('editor');
             } else if (selectedIndex === 4) {

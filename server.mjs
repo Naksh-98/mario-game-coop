@@ -20,6 +20,9 @@ let state = {
 let currentLevel = 1;
 let finishedPlayers = new Set(); // tracks who touched the flag this level
 let levelTransitionTime = 0; // timestamp of last level transition
+let checkpointTouchedBy = new Set(); // who touched the mid-level checkpoint
+let checkpointActive = false; // both players reached the checkpoint
+let checkpointChances = 3; // remaining respawns after checkpoint
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
@@ -124,6 +127,11 @@ app.prepare().then(() => {
       socket.broadcast.to('game').emit('shootFireball', data);
     });
 
+    // Relay warp-pipe events so both players warp together
+    socket.on('warp', (data) => {
+      socket.broadcast.to('game').emit('warp', data);
+    });
+
     socket.on('updateState', ({ role, x, y, anim, flipX, scale, fire }) => {
       if (role === 'p1' || role === 'p2') {
         state[role] = { ...state[role], x, y, anim, flipX, scale, fire };
@@ -144,6 +152,10 @@ app.prepare().then(() => {
         currentLevel++;
         finishedPlayers.clear();
         levelTransitionTime = Date.now();
+        // Reset checkpoint state for the new level
+        checkpointTouchedBy.clear();
+        checkpointActive = false;
+        checkpointChances = 3;
         // Reset player positions for the next level
         state.p1 = { ...state.p1, x: 150, y: 360 };
         state.p2 = { ...state.p2, x: 80, y: 360 };
@@ -151,13 +163,36 @@ app.prepare().then(() => {
       }
     });
 
+    // Mid-level checkpoint: both players must touch it to activate
+    socket.on('checkpointTouched', (role) => {
+      if (checkpointActive) return;
+      checkpointTouchedBy.add(role);
+      io.to('game').emit('checkpointPlayerTouched', role);
+      if (checkpointTouchedBy.has('p1') && checkpointTouchedBy.has('p2')) {
+        checkpointActive = true;
+        checkpointChances = 3;
+        io.to('game').emit('checkpointActivated', { chances: checkpointChances });
+      }
+    });
+
     socket.on('gameOver', () => {
+      // If a checkpoint is active and chances remain, respawn instead of full game over
+      if (checkpointActive && checkpointChances > 1) {
+        checkpointChances--;
+        finishedPlayers.clear();
+        levelTransitionTime = Date.now();
+        io.to('game').emit('checkpointRespawn', { chances: checkpointChances });
+        return;
+      }
       // One player died — broadcast game over to everyone
       io.to('game').emit('gameOver');
       // Reset server state for next game
       currentLevel = 1;
       finishedPlayers.clear();
       levelTransitionTime = 0;
+      checkpointTouchedBy.clear();
+      checkpointActive = false;
+      checkpointChances = 3;
       state.p1 = { x: 150, y: 360, anim: 'run1', flipX: false, connected: false };
       state.p2 = { x: 80, y: 360, anim: 'run1', flipX: false, connected: false };
     });

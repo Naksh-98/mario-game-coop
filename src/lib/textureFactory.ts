@@ -470,6 +470,16 @@ export function createTextures(scene: Phaser.Scene): void {
   gPFire.fillStyle(0xffff00, 1); gPFire.fillCircle(6, 6, 2.5);
   gPFire.generateTexture('player_fireball', 16, 16); gPFire.destroy();
 
+  // Checkpoint banner: a pole with a checkered flag banner
+  const gCP = scene.make.graphics({ x: 0, y: 0 }, false);
+  gCP.fillStyle(0x888888, 1); gCP.fillRect(0, 0, 5, 128);
+  gCP.fillStyle(0xcccccc, 1); gCP.fillRect(1, 0, 2, 128);
+  gCP.fillStyle(0x00aa44, 1); gCP.fillRect(5, 6, 48, 30);
+  gCP.fillStyle(0xffffff, 1);
+  for (let by = 0; by < 3; by++) { for (let bx = 0; bx < 6; bx++) { if ((bx + by) % 2 === 0) gCP.fillRect(5 + bx * 8, 6 + by * 10, 8, 10); } }
+  gCP.fillStyle(0x000000, 1); gCP.fillRect(5, 6, 48, 2); gCP.fillRect(5, 34, 48, 2);
+  gCP.generateTexture('checkpoint', 53, 128); gCP.destroy();
+
   // Death frames (X pose - arms up, legs spread)
   const drawDeath = (key: string, shirtCol: number) => {
     const skin = 0xffdab9; const overalls = 0x1e90ff; const hat = shirtCol; const shoes = 0x8b4513;

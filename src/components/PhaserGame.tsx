@@ -173,6 +173,14 @@ export default function PhaserGame({
             prevJump = false;
             prevFire = false;
             hasFire = false;
+            checkpoints!: Phaser.Physics.Arcade.StaticGroup;
+            checkpointActive = false;
+            checkpointTouched = false;
+            checkpointChances = 3;
+            checkpointX = 0;
+            checkpointY = 0;
+            warpZones: Array<{ x: number; y: number; w: number; destX: number; destY: number; sound: boolean; once?: boolean; used?: boolean }> = [];
+            warping = false;
             lastFireTime = 0;
 
             hearts = 3;
@@ -209,6 +217,17 @@ export default function PhaserGame({
                this.load.audio('killedbrowser', '/audio/killedbrowser.mp3');
                this.load.audio('bowserfire', '/audio/Super_Mario_Bros_Bowser fire.mp3');
                this.load.audio('level6', '/audio/level6.mp3');
+               // New SFX
+               this.load.audio('sfx_1up', '/audio/mario-1-up.mp3');
+               this.load.audio('sfx_blockbreak', '/audio/mario-block-break_xmri4Cz.mp3');
+               this.load.audio('sfx_fireball', '/audio/mario-fireball.mp3');
+               this.load.audio('sfx_powerdown', '/audio/mario-power-down.mp3');
+               this.load.audio('sfx_getbig', '/audio/mariogetbig.mp3');
+               this.load.audio('sfx_starpower', '/audio/mariostarpower.mp3');
+               this.load.audio('sfx_stomp', '/audio/mariostomp.mp3');
+               this.load.audio('sfx_savegame', '/audio/savegame.mp3');
+               this.load.audio('sfx_flagcross', '/audio/whenbothcrosstheflag.mp3');
+               this.load.audio('sfx_pipe', '/audio/mariopipeenter.mp3');
             }
 
             playAudio(freq: number, type: OscillatorType, dur: number, ramp = true) {
@@ -233,12 +252,14 @@ export default function PhaserGame({
             }
 
             playStompSound() {
+               if (this.cache.audio.exists('sfx_stomp')) { try { this.sound.play('sfx_stomp', { volume: sfxVolumeRef.current }); return; } catch (e) {} }
                if (!this.audioCtx) return;
                this.playAudio(120, 'square', 0.1);
                setTimeout(() => this.playAudio(800, 'sine', 0.05), 20);
             }
 
             playHurtSound() {
+               if (this.cache.audio.exists('sfx_powerdown')) { try { this.sound.play('sfx_powerdown', { volume: sfxVolumeRef.current }); return; } catch (e) {} }
                if (!this.audioCtx) return;
                [300, 250, 200, 150].forEach((f, i) => {
                   setTimeout(() => this.playAudio(f, 'sawtooth', 0.1), i * 80);
@@ -256,6 +277,18 @@ export default function PhaserGame({
                   setTimeout(() => this.playAudio(f, 'square', 0.1), i * 60);
                });
             }
+
+            playSfx(key: string, vol = 1) {
+               if (this.cache.audio.exists(key)) { try { this.sound.play(key, { volume: sfxVolumeRef.current * vol }); return true; } catch (e) {} }
+               return false;
+            }
+            play1UpSound() { if (!this.playSfx('sfx_1up')) this.playPowerUpSound(); }
+            playBigSound() { if (!this.playSfx('sfx_getbig')) this.playPowerUpSound(); }
+            playStarSound() { if (!this.playSfx('sfx_starpower')) this.playPowerUpSound(); }
+            playFireballSound() { if (!this.playSfx('sfx_fireball', 0.8)) { try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {} } }
+            playBlockBreakSound() { if (!this.playSfx('sfx_blockbreak')) this.playStompSound(); }
+            playSaveGameSound() { if (!this.playSfx('sfx_savegame')) this.playPowerUpSound(); }
+            playFlagCrossSound() { this.playSfx('sfx_flagcross'); }
 
             playVictorySound() {
                if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
@@ -383,10 +416,10 @@ export default function PhaserGame({
                this.input.on('pointerdown', resumeAudio);
                this.input.keyboard?.on('keydown', resumeAudio);
 
-               this.physics.world.setBounds(0, 0, 10000, 480);
+               this.physics.world.setBounds(0, 0, 12000, 480);
                this.cameraCenter = this.add.rectangle(400, 240, 10, 10, 0, 0);
                this.cameras.main.startFollow(this.cameraCenter, false, 0.1, 0.1);
-               this.cameras.main.setBounds(0, 0, 10000, 480);
+               this.cameras.main.setBounds(0, 0, 12000, 480);
                this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10);
 
                this.createTextures();
@@ -401,6 +434,7 @@ export default function PhaserGame({
                this.piranhas = this.physics.add.group({ allowGravity: false });
                this.movingPlatforms = this.physics.add.group({ immovable: true, allowGravity: false });
                this.flags = this.physics.add.staticGroup();
+               this.checkpoints = this.physics.add.staticGroup();
                this.coins = this.physics.add.group({ allowGravity: false });
 
                this.clouds = this.add.group();
@@ -438,10 +472,13 @@ export default function PhaserGame({
                this.physics.add.collider(this.playerFireballs, this.blocks, (fb: any) => { fb.setVelocityY(-220); });
                this.physics.add.collider(this.playerFireballs, this.movingPlatforms, (fb: any) => { fb.setVelocityY(-220); });
                this.physics.add.overlap(this.playerFireballs, this.enemies, this.fireballHitEnemy as any, undefined, this);
+               this.physics.add.overlap(this.playerFireballs, this.piranhas, this.fireballHitPiranha as any, undefined, this);
                this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
                this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
                this.physics.add.overlap(this.p1, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p2, this.flags, this.touchFlag as any, undefined, this);
+               this.physics.add.overlap(this.p1, this.checkpoints, this.touchCheckpoint as any, undefined, this);
+               this.physics.add.overlap(this.p2, this.checkpoints, this.touchCheckpoint as any, undefined, this);
                this.physics.add.overlap(this.p1, this.coins, this.collectCoin as any, undefined, this);
                this.physics.add.overlap(this.p2, this.coins, this.collectCoin as any, undefined, this);
 
@@ -487,6 +524,8 @@ export default function PhaserGame({
                socket.on('playerFinished', (finRole: string) => {
                   this.finishedSet.add(finRole);
                   if (finRole === role) { this.waitingForOther = true; this.playAudio(523, 'square', 0.15); setTimeout(() => this.playAudio(659, 'square', 0.15), 150); setTimeout(() => this.playAudio(784, 'square', 0.2), 300); }
+                  // When both players have crossed the flag, play the celebratory SFX
+                  if (this.finishedSet.has('p1') && this.finishedSet.has('p2')) { this.playFlagCrossSound(); }
                });
                
                socket.on('startCountdown', (nextLvl: number) => {
@@ -580,13 +619,41 @@ export default function PhaserGame({
                // Teammate's fireball: spawn it on this screen too
                socket.on('shootFireball', (d: any) => { this.spawnFireball(d.x, d.y, d.dir, d.owner); });
 
+               // Warp pipe: the other player triggered a warp — follow them
+               socket.on('warp', (d: any) => { if (!this.warping) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) {} this.doWarp(d.destX, d.destY); } });
+
+               // Checkpoint: a player touched it (show partial banner)
+               socket.on('checkpointPlayerTouched', (_who: string) => {
+                  const msg = this.add.text(400, 120, 'Checkpoint reached!\nWaiting for both players...', { fontSize: '20px', color: '#ffe600', stroke: '#000', strokeThickness: 4, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
+                  this.time.delayedCall(1800, () => msg.destroy());
+               });
+               // Checkpoint: both players touched it — activate save point
+               socket.on('checkpointActivated', (data: any) => {
+                  this.checkpointActive = true;
+                  this.checkpointChances = data.chances ?? 3;
+                  const msg = this.add.text(400, 200, `⭐ GAME SAVED! ⭐\n${this.checkpointChances} chances to finish`, { fontSize: '28px', color: '#00ff66', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
+                  this.tweens.add({ targets: msg, scaleX: 1.2, scaleY: 1.2, yoyo: true, duration: 300, repeat: 2 });
+                  this.time.delayedCall(2500, () => msg.destroy());
+                  this.playSaveGameSound();
+               });
+               // Checkpoint respawn: a player died but chances remain
+               socket.on('checkpointRespawn', (data: any) => {
+                  this.checkpointChances = data.chances ?? 0;
+                  this.respawnAtCheckpoint();
+                  const msg = this.add.text(400, 200, `Respawn!\n${this.checkpointChances} chance${this.checkpointChances === 1 ? '' : 's'} left`, { fontSize: '26px', color: '#ffaa00', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
+                  this.time.delayedCall(2000, () => msg.destroy());
+               });
+
                this.startBGM();
                this.generateLevel(this.level);
             }
 
             generateLevel(lvl: number) {
-               this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true);
+               this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true); this.checkpoints?.clear(true, true);
                this.children.list.filter((c: any) => c.getData && c.getData('decoration')).forEach((c: any) => c.destroy());
+               // Reset checkpoint state for the fresh level
+               this.checkpointActive = false; this.checkpointTouched = false; this.checkpointChances = 3; this.checkpointX = 0; this.checkpointY = 0;
+               this.warpZones = []; this.warping = false;
 
                if (this.p1 && this.p2) {
                   this.p1.setAlpha(1); this.p2.setAlpha(1);
@@ -680,6 +747,66 @@ export default function PhaserGame({
                 };
                 const buildStairs = (startX: number, tex = 'block') => { for (let step = 0; step < 8; step++) { const sx = startX + step * B; for (let row = 0; row <= step; row++) this.blocks.create(sx + B / 2, GY - row * B, tex); } };
 
+               // ─── Reusable WARP PIPE BONUS ROOM ──────────────────────────
+               // Builds a hidden bonus room far to the right and registers warp zones.
+               // entrancePipeX: x of the in-level pipe that warps here (press DOWN)
+               // exitDestX: where players land back in the main level
+               // special3: when true (level 3), place 5 ? blocks that give HP-up mushrooms
+               const buildBonusRoom = (entrancePipeX: number, exitDestX: number, special3: boolean) => {
+                  const bx0 = 9000;
+                  // Register the entrance warp on the given pipe (one-time entry for the special level-3 room)
+                  this.warpZones.push({ x: entrancePipeX, y: GY - 64, w: 40, destX: bx0 + 200, destY: 60, sound: true, once: special3 });
+                  // Bonus room background (dark underground)
+                  this.add.rectangle(bx0 + 700, 240, 1600, 480, 0x101830).setDepth(-9).setData('decoration', true);
+                  // Ground bricks
+                  for (let x = bx0; x < bx0 + 1500; x += B) { this.blocks.create(x + B / 2, GY, 'block'); this.blocks.create(x + B / 2, GY2, 'block'); }
+                  // Cosmetic drop-in pipe cap near the top
+                  (this.blocks.create(bx0 + 200, 40, 'pipe_cap') as Phaser.Physics.Arcade.Sprite).setDepth(2);
+
+                  if (special3) {
+                     // LEVEL 3 special: exactly 5 ? blocks, each giving an HP-up mushroom
+                     const qxs = [bx0 + 300, bx0 + 500, bx0 + 700, bx0 + 900, bx0 + 1100];
+                     qxs.forEach(qx => {
+                        const qb = this.qBlocks.create(qx, GY - 4 * B, 'qblock');
+                        qb.setData('active', true);
+                        qb.setData('force1Up', true); // green 1-UP / HP-up mushroom
+                     });
+                     // A couple of platforms to reach the ? blocks
+                     for (let k = 0; k < 6; k++) this.blocks.create(bx0 + 250 + k * 180, GY - 2 * B, 'block');
+                  } else {
+                     // Other levels: floating brick platforms + coins, with random hardships
+                     const floatRows = [GY - 3 * B, GY - 5 * B, GY - 7 * B, GY - 9 * B];
+                     floatRows.forEach((fy, idx) => {
+                        const startFx = bx0 + 150 + (idx % 2) * 80;
+                        for (let k = 0; k < 10; k++) this.blocks.create(startFx + k * 96, fy, 'block');
+                     });
+                     let cCount = 0;
+                     floatRows.forEach((fy, idx) => {
+                        const startFx = bx0 + 150 + (idx % 2) * 80;
+                        for (let k = 0; k < 10 && cCount < 200; k++) {
+                           for (let cc = 0; cc < 5 && cCount < 200; cc++) {
+                              const cx = startFx + k * 96 + (cc % 2) * 28;
+                              const cy = fy - 32 - Math.floor(cc / 2) * 26;
+                              const coin = this.coins.create(cx, cy, 'coin') as Phaser.Physics.Arcade.Sprite;
+                              (coin.body as any).allowGravity = false;
+                              this.tweens.add({ targets: coin, y: cy - 5, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: (k * 20) % 600 });
+                              cCount++;
+                           }
+                        }
+                     });
+                     // Random hardships: scatter a few random enemies on the bonus-room floor
+                     const hardshipCount = Phaser.Math.Between(2, 4);
+                     for (let h = 0; h < hardshipCount; h++) {
+                        const ex = bx0 + Phaser.Math.Between(200, 1300);
+                        if (Math.random() < 0.5) addGoomba(ex); else addKoopa(ex);
+                     }
+                  }
+
+                  // Exit pipe — DOWN sends players back into the main level near the end
+                  addPipe(bx0 + 1400, 3);
+                  this.warpZones.push({ x: bx0 + 1400, y: GY - 80, w: 40, destX: exitDestX, destY: 360, sound: true });
+               };
+
                if (lvl === 1) {
                   this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
                   [[180, 1], [500, 1.4], [1900, 1], [3600, 1.2], [5600, 0.9]].forEach(([hx, sc]) => this.add.image(hx as number, GY - 22, 'hill').setScale(sc as number).setDepth(-3).setData('decoration', true));
@@ -722,6 +849,9 @@ export default function PhaserGame({
                   // Coin cluster (4 rows x 8 coins)
                   for (let row = 0; row < 4; row++) { for (let col = 0; col < 8; col++) { const cx = 4400 + col * 28; const cy = GY - (3 + row) * B; const coin = this.coins.create(cx, cy, 'coin') as Phaser.Physics.Arcade.Sprite; (coin.body as any).allowGravity = false; this.tweens.add({ targets: coin, y: cy - 6, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut', delay: col * 50 }); } }
                   buildStairs(6464); this.flags.create(6960, GY - 80, 'flag'); buildCastle(7400);
+
+                  // Warp pipe bonus room — 3rd pipe (x=2300) warps here, exit lands 500px before flag
+                  buildBonusRoom(2300, 6460, false);
                } else if (lvl === 2) {
                   this.add.rectangle(5000, 240, 10000, 480, 0x000018).setDepth(-10).setData('decoration', true);
                   for (let x = 0; x < 8500; x += B) { this.blocks.create(x + B / 2, 16, 'block'); this.blocks.create(x + B / 2, 48, 'block'); }
@@ -846,6 +976,12 @@ export default function PhaserGame({
 
                   // End section: stairs and flag
                   buildStairs(6700, 'purple_block'); this.flags.create(7200, GY - 80, 'flag'); buildCastle(7600);
+
+                  // Warp pipe bonus room — a RANDOM purple pipe warps here (only one entrance per playthrough).
+                  // SPECIAL: this bonus room has 5 ? blocks each giving an HP-up mushroom
+                  const lvl3PipeXs = [350, 900, 2000, 3600, 5200, 6100];
+                  const randomPipeX = lvl3PipeXs[Phaser.Math.Between(0, lvl3PipeXs.length - 1)];
+                  buildBonusRoom(randomPipeX, 6700, true);
                } else if (lvl === 4) {
                   // Level 4 - Pillar Platforming (tall columns with green tops, gaps between)
                   this.add.rectangle(5000, 240, 10000, 480, 0x5c94fc).setDepth(-10).setData('decoration', true);
@@ -1104,6 +1240,24 @@ export default function PhaserGame({
 
                   // No flag in level 5 - defeating Bowser ends the game
                }
+
+               // Place a mid-level checkpoint banner (skip boss level 5)
+               if (lvl !== 5) {
+                  const flagObj = this.flags.getChildren()[0] as Phaser.Physics.Arcade.Sprite | undefined;
+                  if (flagObj) {
+                     const GYc = 440;
+                     const cpX = Math.round(flagObj.x / 2);
+                     const cpY = GYc - 64;
+                     const cp = this.checkpoints.create(cpX, cpY, 'checkpoint') as Phaser.Physics.Arcade.Sprite;
+                     cp.setDepth(3);
+                     (cp.body as any).setSize(20, 128);
+                     this.checkpointX = cpX; this.checkpointY = GYc - 40;
+                     // "SAVE POINT" label above the banner
+                     const lbl = this.add.text(cpX, cpY - 80, 'SAVE POINT', { fontSize: '14px', color: '#ffe600', stroke: '#000', strokeThickness: 3, fontStyle: 'bold' }).setOrigin(0.5).setDepth(3).setData('decoration', true);
+                     this.tweens.add({ targets: lbl, y: cpY - 90, yoyo: true, repeat: -1, duration: 800, ease: 'Sine.easeInOut' });
+                  }
+               }
+
                this.startBGM();
                // Start level timer (2 minutes, then -1 HP every 30s)
                this.levelTimer = 120;
@@ -1620,9 +1774,9 @@ export default function PhaserGame({
                 osc3.connect(gain3); gain3.connect(this.audioCtx.destination);
                 osc3.start(now + 0.04); osc3.stop(now + 0.12);
              }
-            hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBrickBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
+            hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBlockBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
             hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up'); if (is1Up) { const mush = this.mushrooms.create(block.x, block.y - 28, 'mushroom_1up') as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', true); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); return; } const roll = Math.random(); let tex: string; let itemType: string; if (roll < 0.35) { tex = 'power_mushroom'; itemType = 'power'; } else if (roll < 0.55) { tex = 'invincibility_star'; itemType = 'star'; } else if (roll < 0.75) { tex = 'fire_flower'; itemType = 'fire_flower'; } else { tex = 'mushroom'; itemType = 'power'; } const item = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; item.setData('itemType', itemType); item.setVelocityX(itemType === 'star' ? 120 : 80); item.setBounceX(1); item.setCollideWorldBounds(true); if (itemType === 'star') { item.setBounceY(0.8); } } }
-            collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.playPowerUpSound(); this.addScore(1000); if (itemType === '1up') { if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.activateStarPower(player); } else if (itemType === 'fire_flower') { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.givefirePower(player); } else { player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
+            collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.addScore(1000); if (itemType === '1up') { this.play1UpSound(); if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.playStarSound(); this.activateStarPower(player); } else if (itemType === 'fire_flower') { this.playBigSound(); player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.givefirePower(player); } else { this.playBigSound(); player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
             activateStarPower(player: any) { player.setData('starPower', true); const colors = [0xff0000, 0xffff00, 0x00ff00, 0x00ffff, 0xff00ff, 0xffffff]; let colorIdx = 0; const glitterEvent = this.time.addEvent({ delay: 80, loop: true, callback: () => { if (!player.active) return; player.setTint(colors[colorIdx % colors.length]); colorIdx++; } }); player.setData('glitterEvent', glitterEvent); this.time.delayedCall(30000, () => { player.setData('starPower', false); player.clearTint(); if (glitterEvent) glitterEvent.destroy(); }); }
 
             givefirePower(player: any) {
@@ -1659,7 +1813,7 @@ export default function PhaserGame({
                fb.setVelocityY(120);
                (fb.body as any).setBounceY(0.8);
                fb.setData('owner', owner);
-               try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {}
+               this.playFireballSound();
                // Destroy after 2.5 seconds
                this.time.delayedCall(2500, () => { if (fb && fb.active) fb.destroy(); });
                // Spinning visual
@@ -1693,9 +1847,18 @@ export default function PhaserGame({
                enemy.setFlipY(true);
                this.tweens.add({ targets: enemy, alpha: 0, angle: 180, duration: 500, onComplete: () => enemy.destroy() });
             }
+            fireballHitPiranha(fireball: any, piranha: any) {
+               if (!fireball.active || !piranha.active) return;
+               fireball.destroy();
+               this.playStompSound();
+               this.addScore(1000);
+               // Kill the piranha plant: stop its tween and fade out
+               this.tweens.killTweensOf(piranha);
+               this.tweens.add({ targets: piranha, alpha: 0, scaleY: 0.2, duration: 350, onComplete: () => piranha.destroy() });
+            }
             collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
              addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
-             show1Up(remote: boolean = false) { this.playPowerUpSound(); if (!remote) { try { socket.emit('oneUp'); socket.emit('syncHearts', this.hearts); } catch (e) {} } const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
+             show1Up(remote: boolean = false) { this.play1UpSound(); if (!remote) { try { socket.emit('oneUp'); socket.emit('syncHearts', this.hearts); } catch (e) {} } const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
              hitEnemy(player: any, enemy: any) { if (player.getData('starPower')) { enemy.destroy(); this.playStompSound(); this.addScore(1000); return; } if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
 
             showHugAnimation() {
@@ -1814,6 +1977,14 @@ export default function PhaserGame({
                socket.emit('flagTouched', playerRole);
                this.playVictorySound();
             }
+            touchCheckpoint(player: any, _cp: any) {
+               const playerRole = (player === this.p1) ? 'p1' : 'p2';
+               if (playerRole !== role) return;
+               if (this.checkpointTouched || this.checkpointActive) return;
+               this.checkpointTouched = true;
+               socket.emit('checkpointTouched', playerRole);
+               this.playCoinSound();
+            }
             createJoystick() {}
             takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; socket.emit('syncHearts', this.hearts); if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
@@ -1836,6 +2007,60 @@ export default function PhaserGame({
                this.time.delayedCall(1500, () => {
                   const goText = this.add.text(400, 240, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0);
                   this.tweens.add({ targets: goText, alpha: 1, duration: 500 });
+               });
+            }
+
+            respawnAtCheckpoint() {
+               // Revive both players at the checkpoint position
+               this.gameOver = false;
+               this.hearts = 3;
+               const rx = this.checkpointX || 400;
+               const ry = (this.checkpointY || 360) - 40;
+               [this.p1, this.p2].forEach((plr, i) => {
+                  const pr = plr === this.p1 ? 'p1' : 'p2';
+                  plr.setVelocity(0, 0);
+                  (plr.body as any).enable = true;
+                  (plr.body as any).allowGravity = true;
+                  plr.setCollideWorldBounds(true);
+                  plr.setAlpha(1); plr.setDepth(10); plr.setScale(1); plr.setFlipX(false);
+                  plr.setData('isBig', false); plr.setData('fireOutfit', false);
+                  plr.setTexture(`${pr}_run1`);
+                  plr.setPosition(rx + i * 30, ry);
+               });
+               this.hasFire = false;
+               if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
+               // Snap camera to checkpoint
+               this.cameraCenter.x = rx;
+               this.startBGM();
+            }
+
+            triggerWarp(wz: { x: number; y: number; w: number; destX: number; destY: number; sound: boolean }) {
+               if (this.warping) return;
+               this.warping = true;
+               if (wz.sound) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) {} }
+               // Tell the other client to warp too (keep co-op in sync)
+               try { socket.emit('warp', { destX: wz.destX, destY: wz.destY }); } catch (e) {}
+               this.doWarp(wz.destX, wz.destY);
+            }
+
+            doWarp(destX: number, destY: number) {
+               this.warping = true;
+               // Brief "enter pipe" visual: shrink the local player downward
+               const sinkY = this.myPlayer.y + 30;
+               this.cameras.main.fadeOut(350, 0, 0, 0);
+               this.tweens.add({ targets: this.myPlayer, y: sinkY, scaleY: 0.4, alpha: 0.5, duration: 300, ease: 'Quad.easeIn' });
+               this.cameras.main.once('camerafadeoutcomplete', () => {
+                  // Move both players to destination
+                  [this.p1, this.p2].forEach((plr, i) => {
+                     plr.setVelocity(0, 0);
+                     plr.setPosition(destX + i * 30, destY);
+                     plr.setScale(plr.getData('isBig') ? 1.4 : 1);
+                     plr.setAlpha(1);
+                  });
+                  this.cameraCenter.x = destX;
+                  this.cameras.main.scrollX = Math.max(0, destX - 400);
+                  this.cameras.main.fadeIn(350, 0, 0, 0);
+                  this.time.delayedCall(600, () => { this.warping = false; });
                });
             }
 
@@ -1911,7 +2136,19 @@ export default function PhaserGame({
                let animState = 'run1';
                const skin = this.hasFire ? 'fire_' : '';
 
-               if (isCrouch && onGround) { this.myPlayer.setVelocityX(0); this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18); animState = 'crouch'; this.myPlayer.anims.stop(); }
+               if (isCrouch && onGround) { this.myPlayer.setVelocityX(0); this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18); animState = 'crouch'; this.myPlayer.anims.stop();
+                  // Warp pipe: if crouching on a warp zone, trigger the warp
+                  if (!this.warping) {
+                     for (const wz of this.warpZones) {
+                        if (wz.once && wz.used) continue;
+                        if (Math.abs(this.myPlayer.x - wz.x) < wz.w && Math.abs((this.myPlayer.y + 14) - wz.y) < 50) {
+                           if (wz.once) wz.used = true;
+                           this.triggerWarp(wz);
+                           break;
+                        }
+                     }
+                  }
+               }
                else {
                   this.myPlayer.setBodySize(18, 28); this.myPlayer.setOffset(4, 6);
                   if (isLeft) { this.myPlayer.setVelocityX(-250); this.myPlayer.setFlipX(true); if (onGround) { animState = 'run'; this.myPlayer.play(`${role}_${skin}run`, true); } }
@@ -1927,7 +2164,7 @@ export default function PhaserGame({
                // Don't override camera during boss auto-scroll
                let autoScrolling = false;
                this.enemies.getChildren().forEach((e: any) => { if (e.getData && e.getData('isBoss') && e.getData('autoScrollActive')) autoScrolling = true; if (e.getData && e.getData('isBoss') && e.getData('arenaLocked')) autoScrolling = true; });
-               if (!autoScrolling) this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 9600);
+               if (!autoScrolling) this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 11600);
                if (this.myPlayer.x < this.cameras.main.scrollX + 10) this.myPlayer.x = this.cameras.main.scrollX + 10;
 
                // Instant death if player falls into a pit (below ground level GY=440)
@@ -1999,7 +2236,8 @@ export default function PhaserGame({
                socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale, fire: this.hasFire });
                const timerDisplay = this.levelTimer >= 0 ? `⏱${Math.floor(this.levelTimer / 60)}:${(this.levelTimer % 60).toString().padStart(2, '0')}` : `⏱0:00`;
                const heartsDisplay = `❤️×${this.hearts}`;
-               this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}`);
+               const cpDisplay = this.checkpointActive ? `  🚩×${this.checkpointChances}` : '';
+               this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}${cpDisplay}`);
             }
          }
 
