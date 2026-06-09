@@ -288,7 +288,7 @@ export default function PhaserGame({
             playFireballSound() { if (!this.playSfx('sfx_fireball', 0.8)) { try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {} } }
             playBlockBreakSound() { if (!this.playSfx('sfx_blockbreak')) this.playStompSound(); }
             playSaveGameSound() { if (!this.playSfx('sfx_savegame')) this.playPowerUpSound(); }
-            // playFlagCrossSound() { this.playSfx('sfx_flagcross'); }
+            playFlagCrossSound() { this.playSfx('sfx_flagcross'); }
 
             playVictorySound() {
                if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }

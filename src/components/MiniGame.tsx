@@ -35,6 +35,7 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
             joyKeys = joyKeysRef.current;
             prevJump = false;
             currentBgm: Phaser.Sound.BaseSound | null = null;
+            highScore = 0;
 
             preload() {
                this.load.audio('minigamemain', '/audio/minigamemain.mp3');
@@ -101,16 +102,66 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
                   this.currentBgm.play();
                } catch (e) { console.error('Error playing minigame BGM:', e); }
 
-               // Sky background
-               this.add.rectangle(400, 240, 800, 480, 0x5c94fc);
+               // Load saved high score
+               try { this.highScore = parseInt(localStorage.getItem('minix_highscore') || '0', 10) || 0; } catch { this.highScore = 0; }
 
-               // Ground only — no floating platforms
+               // ─── Background theme ───────────────────────────────────────
+               // Sky gradient
+               this.add.rectangle(400, 240, 800, 480, 0x5c94fc);
+               // Distant hills
+               const mkHill = (hx: number, hy: number, r: number, col: number) => {
+                  const g = this.add.graphics().setDepth(-8);
+                  g.fillStyle(col, 1); g.fillEllipse(hx, hy, r * 2, r);
+               };
+               mkHill(120, 440, 130, 0x3c8c3c); mkHill(420, 450, 170, 0x349034); mkHill(700, 440, 140, 0x3c8c3c);
+               // Clouds
+               const mkCloud = (cx: number, cy: number, s: number) => {
+                  const g = this.add.graphics().setDepth(-7);
+                  g.fillStyle(0xffffff, 0.9);
+                  g.fillEllipse(cx, cy, 60 * s, 30 * s); g.fillEllipse(cx - 24 * s, cy + 6 * s, 44 * s, 24 * s); g.fillEllipse(cx + 26 * s, cy + 6 * s, 40 * s, 22 * s);
+               };
+               mkCloud(140, 90, 1); mkCloud(420, 60, 1.3); mkCloud(660, 110, 0.9);
+               // Bushes / trees along the ground
+               const mkBush = (bx: number) => {
+                  const g = this.add.graphics().setDepth(-2);
+                  g.fillStyle(0x2e7d32, 1);
+                  g.fillEllipse(bx, 432, 90, 44); g.fillEllipse(bx - 30, 438, 56, 36); g.fillEllipse(bx + 30, 438, 56, 36);
+                  g.fillStyle(0x388e3c, 1); g.fillEllipse(bx, 428, 50, 28);
+               };
+               [80, 300, 560, 740].forEach(mkBush);
+               // Decorative pipe with a piranha plant peeking out
+               const mkPipePlant = (px: number) => {
+                  const pipe = this.add.graphics().setDepth(-2);
+                  pipe.fillStyle(0x196419, 1); pipe.fillRect(px - 22, 410, 44, 50);
+                  pipe.fillStyle(0x22a022, 1); pipe.fillRect(px - 16, 410, 12, 50);
+                  pipe.fillStyle(0x196419, 1); pipe.fillRect(px - 28, 404, 56, 14);
+                  // piranha head
+                  const plant = this.add.graphics().setDepth(-3);
+                  plant.fillStyle(0xff3030, 1); plant.fillEllipse(px, 392, 26, 22);
+                  plant.fillStyle(0xffffff, 1); plant.fillRect(px - 8, 392, 4, 4); plant.fillRect(px + 4, 392, 4, 4);
+                  this.tweens.add({ targets: plant, y: -8, yoyo: true, repeat: -1, duration: 1400, ease: 'Sine.easeInOut' });
+               };
+               mkPipePlant(220); mkPipePlant(620);
+
+               // Ground
                this.blocks = this.physics.add.staticGroup();
                for (let x = 0; x < 800; x += 32) {
                   this.blocks.create(x + 16, 460, undefined).setSize(32, 32).setVisible(false);
                   this.add.rectangle(x + 16, 460, 32, 32, 0xc84c0c);
                   this.add.rectangle(x + 16, 476, 32, 16, 0x7c3800);
                }
+               // Floating platforms on top — give the player places to hop to
+               const mkPlatform = (startX: number, count: number, py: number) => {
+                  for (let i = 0; i < count; i++) {
+                     const px = startX + i * 32;
+                     this.blocks.create(px + 16, py, undefined).setSize(32, 32).setVisible(false);
+                     this.add.rectangle(px + 16, py, 32, 16, 0xc84c0c).setDepth(1);
+                     this.add.rectangle(px + 16, py + 8, 32, 8, 0x7c3800).setDepth(1);
+                  }
+               };
+               mkPlatform(90, 4, 180);   // left floating platform
+               mkPlatform(340, 4, 130);  // center high platform
+               mkPlatform(600, 4, 180);  // right floating platform
 
                // Draw Mario frames — exact same as PhaserGame (Mario red hat)
                this.drawPlayer('mario_run1', 0xd50000, 'run1');
@@ -164,6 +215,8 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
 
                this.cursors = this.input.keyboard!.createCursorKeys();
                this.uiText = this.add.text(10, 10, '', { fontSize: '22px', color: '#fff', stroke: '#000', strokeThickness: 3, fontFamily: 'monospace' }).setDepth(100);
+               // High score banner at the top-center
+               this.add.text(400, 12, `🏆 HIGH SCORE: ${this.highScore}`, { fontSize: '20px', color: '#ffd700', stroke: '#000', strokeThickness: 3, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5, 0).setDepth(100);
                this.waveText = this.add.text(400, 220, '', { fontSize: '52px', color: '#ffd700', stroke: '#000', strokeThickness: 5, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(100).setAlpha(0);
 
                this.startWave();
@@ -216,10 +269,22 @@ export default function MiniGame({ musicVolume = 0.5, sfxVolume = 0.7, btnPos = 
                if (this.currentBgm) { this.currentBgm.stop(); this.currentBgm.destroy(); this.currentBgm = null; }
                if (this.sound && (this.sound as any).context && (this.sound as any).context.state === 'suspended') (this.sound as any).context.resume();
                try { this.sound.play('mariodeath', { volume: musicVolumeRef.current }); } catch (e) { console.error(e); }
-               this.add.rectangle(400, 240, 440, 220, 0x000000, 0.85).setDepth(200);
-               this.add.text(400, 180, 'GAME OVER', { fontSize: '44px', color: '#ff0000', stroke: '#000', strokeThickness: 5, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
-               this.add.text(400, 248, `SCORE: ${this.score}`, { fontSize: '26px', color: '#ffd700', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
-               this.add.text(400, 295, `WAVE REACHED: ${this.wave}`, { fontSize: '20px', color: '#fff', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+               // Save high score
+               const isNewRecord = this.score > this.highScore;
+               if (isNewRecord) {
+                  this.highScore = this.score;
+                  try { localStorage.setItem('minix_highscore', String(this.highScore)); } catch {}
+               }
+               this.add.rectangle(400, 240, 460, 260, 0x000000, 0.85).setDepth(200);
+               this.add.text(400, 150, 'GAME OVER', { fontSize: '44px', color: '#ff0000', stroke: '#000', strokeThickness: 5, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+               this.add.text(400, 210, `SCORE: ${this.score}`, { fontSize: '26px', color: '#ffd700', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+               this.add.text(400, 250, `WAVE REACHED: ${this.wave}`, { fontSize: '20px', color: '#fff', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+               if (isNewRecord) {
+                  const nr = this.add.text(400, 295, '⭐ NEW HIGH SCORE! ⭐', { fontSize: '22px', color: '#00ff66', stroke: '#000', strokeThickness: 3, fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+                  this.tweens.add({ targets: nr, scaleX: 1.15, scaleY: 1.15, yoyo: true, repeat: -1, duration: 500 });
+               } else {
+                  this.add.text(400, 295, `🏆 HIGH SCORE: ${this.highScore}`, { fontSize: '20px', color: '#ffd700', stroke: '#000', strokeThickness: 2, fontFamily: 'monospace' }).setOrigin(0.5).setDepth(201);
+               }
             }
 
             update() {
