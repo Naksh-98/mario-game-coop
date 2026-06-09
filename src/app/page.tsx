@@ -19,7 +19,7 @@ interface GameSettings {
   buttonLayout?: ButtonLayout | null;  // custom positions; null = use btnPos default
 }
 
-const DEFAULT_SETTINGS: GameSettings = { musicVol: 1.0, sfxVol: 0.04, btnPos: 'left', buttonLayout: null };
+const DEFAULT_SETTINGS: GameSettings = { musicVol: 0.0, sfxVol: 0.00, btnPos: 'left', buttonLayout: null };
 
 function loadSettings(): GameSettings {
   try {

@@ -17,12 +17,16 @@ export default function CallOverlay() {
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
   const [incomingVideo, setIncomingVideo] = useState(true);
+  const [callPos, setCallPos] = useState({ x: 0, y: 0 });
+  const [selfPos, setSelfPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ target: 'call' | 'self' | null; offX: number; offY: number }>({ target: null, offX: 0, offY: 0 });
 
   const socketRef = useRef<Socket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
   const isCallerRef = useRef(false);
 
@@ -61,8 +65,15 @@ export default function CallOverlay() {
       if (e.candidate) socketRef.current?.emit('webrtcIce', { candidate: e.candidate });
     };
     pc.ontrack = (e) => {
+      const stream = e.streams[0];
+      // Always route remote audio through a dedicated <audio> element — iOS Safari
+      // won't reliably play audio from a hidden/inactive <video> element.
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
+        remoteAudioRef.current.play?.().catch(() => {});
+      }
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = e.streams[0];
+        remoteVideoRef.current.srcObject = stream;
         remoteVideoRef.current.play?.().catch(() => {});
       }
     };
@@ -89,6 +100,8 @@ export default function CallOverlay() {
   // ─── Start a call (caller) ────────────────────────────────────────
   const startCall = useCallback(async (video: boolean) => {
     try {
+      // Kick the audio element within the user gesture so iOS allows playback later
+      remoteAudioRef.current?.play?.().catch(() => {});
       isCallerRef.current = true;
       setWithVideo(video);
       setCallState('calling');
@@ -101,6 +114,8 @@ export default function CallOverlay() {
   // ─── Accept an incoming call (callee) ─────────────────────────────
   const acceptCall = useCallback(async () => {
     try {
+      // Kick the audio element within the user gesture so iOS allows playback
+      remoteAudioRef.current?.play?.().catch(() => {});
       const stream = await getMedia(incomingVideo);
       const pc = createPeer();
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
@@ -208,6 +223,30 @@ export default function CallOverlay() {
     setCamOff(c => !c);
   }, []);
 
+  // ─── Drag the call / self windows ────────────────────────────────
+  const onCallDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = { target: 'call', offX: e.clientX - callPos.x, offY: e.clientY - callPos.y };
+  }, [callPos]);
+
+  const onSelfDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = { target: 'self', offX: e.clientX - selfPos.x, offY: e.clientY - selfPos.y };
+  }, [selfPos]);
+
+  const onDragMove = useCallback((e: React.PointerEvent) => {
+    if (dragRef.current.target === 'call') {
+      setCallPos({ x: e.clientX - dragRef.current.offX, y: e.clientY - dragRef.current.offY });
+    } else if (dragRef.current.target === 'self') {
+      setSelfPos({ x: e.clientX - dragRef.current.offX, y: e.clientY - dragRef.current.offY });
+    }
+  }, []);
+
+  const onDragEnd = useCallback(() => { dragRef.current.target = null; }, []);
+
   // ─── UI ───────────────────────────────────────────────────────────
   const iconBtn: React.CSSProperties = {
     width: 44, height: 44, fontSize: '1.2rem', backgroundColor: 'rgba(255,255,255,0.1)',
@@ -246,18 +285,46 @@ export default function CallOverlay() {
         </div>
       )}
 
-      {/* Connected call UI */}
-      <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 120, display: callState === 'connected' ? 'flex' : 'none', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <video ref={remoteVideoRef} autoPlay playsInline style={{ width: 160, height: 120, background: '#000', borderRadius: 8, border: '2px solid rgba(255,255,255,0.4)', objectFit: 'cover', display: withVideo ? 'block' : 'none' }} />
-          <video ref={localVideoRef} autoPlay playsInline muted style={{ width: 100, height: 75, background: '#000', borderRadius: 8, border: '2px solid rgba(255,255,255,0.4)', objectFit: 'cover', display: withVideo ? 'block' : 'none' }} />
-        </div>
+      {/* Connected call UI — draggable, shows the remote (other player) */}
+      <div
+        onPointerDown={onCallDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+        style={{
+          position: 'absolute', left: '50%', bottom: '20px',
+          transform: `translateX(-50%) translate(${callPos.x}px, ${callPos.y}px)`,
+          zIndex: 120, display: callState === 'connected' ? 'flex' : 'none',
+          flexDirection: 'column', alignItems: 'center', gap: 8,
+          cursor: 'grab', touchAction: 'none',
+        }}
+      >
+        <video ref={remoteVideoRef} autoPlay playsInline muted style={{ width: 200, height: 150, background: '#000', borderRadius: 8, border: '2px solid rgba(255,255,255,0.4)', objectFit: 'cover', display: withVideo ? 'block' : 'none', pointerEvents: 'none' }} />
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={toggleMute} style={iconBtn} title={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🎤'}</button>
-          {withVideo && <button onClick={toggleCam} style={iconBtn} title={camOff ? 'Camera on' : 'Camera off'}>{camOff ? '🚫' : '📹'}</button>}
-          <button onClick={() => endCall()} style={endBtn}>✕ End</button>
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={toggleMute} style={iconBtn} title={muted ? 'Unmute' : 'Mute'}>{muted ? '🔇' : '🎤'}</button>
+          {withVideo && <button onPointerDown={(e) => e.stopPropagation()} onClick={toggleCam} style={iconBtn} title={camOff ? 'Camera on' : 'Camera off'}>{camOff ? '🚫' : '📹'}</button>}
+          <button onPointerDown={(e) => e.stopPropagation()} onClick={() => endCall()} style={endBtn}>✕ End</button>
         </div>
       </div>
+
+      {/* Self-view — separately draggable */}
+      <div
+        onPointerDown={onSelfDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+        onPointerCancel={onDragEnd}
+        style={{
+          position: 'absolute', left: '20px', bottom: '20px',
+          transform: `translate(${selfPos.x}px, ${selfPos.y}px)`,
+          zIndex: 121, display: (callState === 'connected' && withVideo) ? 'block' : 'none',
+          cursor: 'grab', touchAction: 'none',
+        }}
+      >
+        <video ref={localVideoRef} autoPlay playsInline muted style={{ width: 110, height: 82, background: '#000', borderRadius: 8, border: '2px solid rgba(255,255,255,0.5)', objectFit: 'cover', pointerEvents: 'none' }} />
+      </div>
+
+      {/* Dedicated remote audio element — required for reliable audio playback on iOS Safari */}
+      <audio ref={remoteAudioRef} autoPlay playsInline />
     </>
   );
 }
