@@ -132,6 +132,29 @@ app.prepare().then(() => {
       socket.broadcast.to('game').emit('warp', data);
     });
 
+    // ─── WebRTC signaling for audio/video calls ───────────────────────
+    socket.on('callRequest', (data) => {
+      socket.broadcast.to('game').emit('callRequest', data);
+    });
+    socket.on('callAccepted', (data) => {
+      socket.broadcast.to('game').emit('callAccepted', data);
+    });
+    socket.on('callRejected', () => {
+      socket.broadcast.to('game').emit('callRejected');
+    });
+    socket.on('callEnded', () => {
+      socket.broadcast.to('game').emit('callEnded');
+    });
+    socket.on('webrtcOffer', (data) => {
+      socket.broadcast.to('game').emit('webrtcOffer', data);
+    });
+    socket.on('webrtcAnswer', (data) => {
+      socket.broadcast.to('game').emit('webrtcAnswer', data);
+    });
+    socket.on('webrtcIce', (data) => {
+      socket.broadcast.to('game').emit('webrtcIce', data);
+    });
+
     socket.on('updateState', ({ role, x, y, anim, flipX, scale, fire }) => {
       if (role === 'p1' || role === 'p2') {
         state[role] = { ...state[role], x, y, anim, flipX, scale, fire };

@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 
 const PhaserGame = dynamic(() => import('@/components/PhaserGame'), { ssr: false });
 const MiniGame = dynamic(() => import('@/components/MiniGame'), { ssr: false });
+const CallOverlay = dynamic(() => import('@/components/CallOverlay'), { ssr: false });
 
 interface BtnPos { x: number; y: number }
 interface ButtonLayout {
@@ -18,7 +19,7 @@ interface GameSettings {
   buttonLayout?: ButtonLayout | null;  // custom positions; null = use btnPos default
 }
 
-const DEFAULT_SETTINGS: GameSettings = { musicVol: 0.5, sfxVol: 0.7, btnPos: 'left', buttonLayout: null };
+const DEFAULT_SETTINGS: GameSettings = { musicVol: 1.0, sfxVol: 0.04, btnPos: 'left', buttonLayout: null };
 
 function loadSettings(): GameSettings {
   try {
@@ -54,6 +55,8 @@ export default function Home() {
   const [settings, setSettings] = useState<GameSettings>({ ...DEFAULT_SETTINGS });
   const [loadedSave, setLoadedSave] = useState<any>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,7 +102,9 @@ export default function Home() {
   // Save settings whenever they change
   useEffect(() => {
     try { localStorage.setItem('mario_settings', JSON.stringify(settings)); } catch { }
-    if (audioRef.current) audioRef.current.volume = settings.musicVol;
+    // Amplify via Web Audio gain (can exceed 1.0). Map slider 0-1 → gain 0-3 for a louder max.
+    if (gainNodeRef.current) gainNodeRef.current.gain.value = settings.musicVol * 3;
+    if (audioRef.current) audioRef.current.volume = 1; // keep element at full; gain controls loudness
   }, [settings]);
 
   // Play/Stop Lobby BGM
@@ -108,17 +113,30 @@ export default function Home() {
       if (!audioRef.current) {
         audioRef.current = new Audio('/audio/mainscreen.mp3');
         audioRef.current.loop = true;
-        audioRef.current.volume = settings.musicVol;
+        audioRef.current.volume = 1;
+        // Route through Web Audio so we can amplify beyond the HTML 100% cap
+        try {
+          const Ctx = (window.AudioContext || (window as any).webkitAudioContext);
+          audioCtxRef.current = new Ctx();
+          const src = audioCtxRef.current.createMediaElementSource(audioRef.current);
+          gainNodeRef.current = audioCtxRef.current.createGain();
+          gainNodeRef.current.gain.value = settings.musicVol * 3;
+          src.connect(gainNodeRef.current);
+          gainNodeRef.current.connect(audioCtxRef.current.destination);
+        } catch { audioRef.current.volume = settings.musicVol; }
       }
+      audioCtxRef.current?.resume?.().catch(() => {});
       audioRef.current.play().catch(() => { });
     } else {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; gainNodeRef.current = null; }
     }
-    return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
+    return () => { if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; } if (audioCtxRef.current) { audioCtxRef.current.close().catch(() => {}); audioCtxRef.current = null; gainNodeRef.current = null; } };
   }, [role]);
 
   // Assist with autoplay on any interaction
   const triggerAudioPlay = useCallback(() => {
+    audioCtxRef.current?.resume?.().catch(() => {});
     if (audioRef.current && audioRef.current.paused) audioRef.current.play().catch(() => { });
   }, []);
 
@@ -624,6 +642,7 @@ export default function Home() {
       >
         ⚙️
       </button>
+      <CallOverlay />
       {showSettings && <SettingsModal />}
       {showCustomize && <CustomizeControls />}
     </main>
