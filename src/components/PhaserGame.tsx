@@ -42,6 +42,18 @@ export default function PhaserGame({
 
    const [showSaveBtn, setShowSaveBtn] = React.useState(false);
    const [saveData, setSaveData] = React.useState<any>(null);
+   const [showRestart, setShowRestart] = React.useState(false);
+
+   React.useEffect(() => {
+      const onShow = () => setShowRestart(true);
+      const onHide = () => setShowRestart(false);
+      window.addEventListener('marioShowRestart', onShow);
+      window.addEventListener('marioHideRestart', onHide);
+      return () => {
+         window.removeEventListener('marioShowRestart', onShow);
+         window.removeEventListener('marioHideRestart', onHide);
+      };
+   }, []);
    const [hasFirePower, setHasFirePower] = React.useState(false);
 
    React.useEffect(() => {
@@ -176,9 +188,11 @@ export default function PhaserGame({
             checkpoints!: Phaser.Physics.Arcade.StaticGroup;
             checkpointActive = false;
             checkpointTouched = false;
-            checkpointChances = 3;
+            levelChances = 3;
             checkpointX = 0;
             checkpointY = 0;
+            levelStartX = 150;
+            levelStartY = 360;
             warpZones: Array<{ x: number; y: number; w: number; destX: number; destY: number; sound: boolean; once?: boolean; used?: boolean }> = [];
             warping = false;
             lastFireTime = 0;
@@ -473,8 +487,8 @@ export default function PhaserGame({
                this.physics.add.collider(this.playerFireballs, this.movingPlatforms, (fb: any) => { fb.setVelocityY(-220); });
                this.physics.add.overlap(this.playerFireballs, this.enemies, this.fireballHitEnemy as any, undefined, this);
                this.physics.add.overlap(this.playerFireballs, this.piranhas, this.fireballHitPiranha as any, undefined, this);
-               this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
-               this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.hearts = 0; this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
+               this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.gameOver = true; socket.emit('gameOver', { heartsGone: false }); this.playGameOverSound(); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
+               this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.gameOver = true; socket.emit('gameOver', { heartsGone: false }); this.playGameOverSound(); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
                this.physics.add.overlap(this.p1, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p2, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p1, this.checkpoints, this.touchCheckpoint as any, undefined, this);
@@ -611,8 +625,12 @@ export default function PhaserGame({
                   } catch (e) { console.warn('Failed to load custom level:', e); }
                });
                socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
-               // Restart the whole game (synced) — both players return to level 1 start, no reload
-               socket.on('restartGame', () => { this.restartGame(); });
+               // Restart after game over (synced) — resume from checkpoint or level start, no reload
+               socket.on('restartGame', (data: any) => { this.restartGame(!!(data && data.fromCheckpoint)); });
+               // React restart button → emit over the socket
+               const onDomRestart = () => { socket.emit('restartGame'); };
+               window.addEventListener('marioDoRestart', onDomRestart);
+               this.events.once('shutdown', () => window.removeEventListener('marioDoRestart', onDomRestart));
 
                // Shared HP: receive updated hearts from the other player
                socket.on('syncHearts', (hearts: number) => { this.hearts = hearts; });
@@ -629,22 +647,23 @@ export default function PhaserGame({
                   const msg = this.add.text(400, 120, 'Checkpoint reached!\nWaiting for both players...', { fontSize: '20px', color: '#ffe600', stroke: '#000', strokeThickness: 4, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
                   this.time.delayedCall(1800, () => msg.destroy());
                });
-               // Checkpoint: both players touched it — activate save point
-               socket.on('checkpointActivated', (data: any) => {
+               // Checkpoint: both players touched it — game saved (moves respawn point to checkpoint).
+               // Does NOT change chances or replenish flags.
+               socket.on('checkpointActivated', () => {
                   this.checkpointActive = true;
-                  this.checkpointChances = data.chances ?? 3;
-                  const msg = this.add.text(400, 200, `⭐ GAME SAVED! ⭐\n${this.checkpointChances} chances to finish`, { fontSize: '28px', color: '#00ff66', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
+                  const msg = this.add.text(400, 200, '⭐ GAME SAVED! ⭐\nRespawn here if you fall', { fontSize: '26px', color: '#00ff66', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
                   this.tweens.add({ targets: msg, scaleX: 1.2, scaleY: 1.2, yoyo: true, duration: 300, repeat: 2 });
                   this.time.delayedCall(2500, () => msg.destroy());
                   this.playSaveGameSound();
                });
-               // Checkpoint respawn: a player died but chances remain
+               // Respawn: a player died but chances remain — respawn at checkpoint or level start
                socket.on('checkpointRespawn', (data: any) => {
-                  this.checkpointChances = data.chances ?? 0;
-                  this.respawnAtCheckpoint();
-                  const msg = this.add.text(400, 200, `Respawn!\n${this.checkpointChances} chance${this.checkpointChances === 1 ? '' : 's'} left`, { fontSize: '26px', color: '#ffaa00', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
+                  this.levelChances = data.chances ?? 0;
+                  this.respawnPlayers(!!data.fromCheckpoint);
+                  const msg = this.add.text(400, 200, `Respawn!\n${this.levelChances} chance${this.levelChances === 1 ? '' : 's'} left`, { fontSize: '26px', color: '#ffaa00', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
                   this.time.delayedCall(2000, () => msg.destroy());
                });
+
 
                this.startBGM();
                this.generateLevel(this.level);
@@ -653,8 +672,10 @@ export default function PhaserGame({
             generateLevel(lvl: number) {
                this.blocks.clear(true, true); this.obstacles.clear(true, true); this.enemies.clear(true, true); this.qBlocks.clear(true, true); this.flags.clear(true, true); this.fireballs.clear(true, true); this.movingPlatforms.clear(true, true); this.mushrooms?.clear(true, true); this.piranhas?.clear(true, true); this.coins?.clear(true, true); this.checkpoints?.clear(true, true);
                this.children.list.filter((c: any) => c.getData && c.getData('decoration')).forEach((c: any) => c.destroy());
-               // Reset checkpoint state for the fresh level
-               this.checkpointActive = false; this.checkpointTouched = false; this.checkpointChances = 3; this.checkpointX = 0; this.checkpointY = 0;
+               // Reset checkpoint + chances for the fresh level
+               this.checkpointActive = false; this.checkpointTouched = false; this.levelChances = 3; this.checkpointX = 0; this.checkpointY = 0;
+               // Record the level start spawn point (used for respawns before a checkpoint is reached)
+               this.levelStartX = 150; this.levelStartY = 360;
                this.warpZones = []; this.warping = false;
 
                if (this.p1 && this.p2) {
@@ -1988,7 +2009,7 @@ export default function PhaserGame({
                this.playCoinSound();
             }
             createJoystick() {}
-            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; socket.emit('syncHearts', this.hearts); if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver'); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; socket.emit('syncHearts', this.hearts); if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver', { heartsGone: true }); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
 
             deathAnimation(player: any) {
                player.setVelocity(0, 0); (player.body as any).allowGravity = false;
@@ -2009,38 +2030,38 @@ export default function PhaserGame({
                this.time.delayedCall(1500, () => {
                   const goText = this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0).setData('gameover', true);
                   this.tweens.add({ targets: goText, alpha: 1, duration: 500 });
-                  // Restart button — resets both players to level 1 without reloading the page
-                  const btnBg = this.add.rectangle(400, 300, 280, 60, 0xd50000).setScrollFactor(0).setDepth(200).setStrokeStyle(4, 0xffffff).setInteractive({ useHandCursor: true }).setAlpha(0).setData('gameover', true);
-                  const btnText = this.add.text(400, 300, '↻ RESTART GAME', { fontSize: '28px', color: '#fff', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(201).setAlpha(0).setData('gameover', true);
-                  this.tweens.add({ targets: [btnBg, btnText], alpha: 1, duration: 500, delay: 300 });
-                  const doRestart = () => { socket.emit('restartGame'); };
-                  btnBg.on('pointerdown', doRestart);
-                  btnText.setInteractive({ useHandCursor: true }).on('pointerdown', doRestart);
-                  this.input.keyboard?.once('keydown-ENTER', doRestart);
+                  // Tell React to show the restart button overlay (reliable taps on mobile)
+                  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioShowRestart'));
+                  // Keyboard shortcut still works
+                  this.input.keyboard?.once('keydown-ENTER', () => socket.emit('restartGame'));
                });
             }
 
-            restartGame() {
+            restartGame(fromCheckpoint: boolean = false) {
                // Remove game-over UI elements
                this.children.list.filter((c: any) => c.getData && c.getData('gameover')).forEach((c: any) => c.destroy());
-               // Reset all game state and rebuild level 1 — no page reload
+               if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioHideRestart'));
+               // Resume on the CURRENT level (no reset to level 1).
                this.gameOver = false;
                this.gameWon = false;
                this.waitingForOther = false;
                this.countingDown = false;
                this.finishedSet.clear();
                this.hearts = 3;
-               this.score = 0;
-               this.coinCount = 0;
-               this.level = 1;
+               this.levelChances = 3;
                this.isBig = false;
                this.hasFire = false;
-               this.checkpointActive = false;
-               this.checkpointTouched = false;
-               this.checkpointChances = 3;
                this.warping = false;
                if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
-               // Revive both players
+
+               // Decide spawn point: checkpoint (if reached) or the level start
+               const useCp = fromCheckpoint && this.checkpointActive && this.checkpointX > 0;
+               const rx = useCp ? this.checkpointX : this.levelStartX;
+               const ry = (useCp ? this.checkpointY : this.levelStartY) - 40;
+
+               // Rebuild the current level fresh, then place players at the spawn point
+               this.generateLevel(this.level);
+
                [this.p1, this.p2].forEach((plr, i) => {
                   const pr = plr === this.p1 ? 'p1' : 'p2';
                   plr.setVelocity(0, 0);
@@ -2051,19 +2072,19 @@ export default function PhaserGame({
                   plr.setData('isBig', false); plr.setData('fireOutfit', false); plr.setData('starPower', false);
                   plr.clearTint();
                   plr.setTexture(`${pr}_run1`);
-                  plr.setPosition(i === 0 ? 150 : 80, 360);
+                  plr.setPosition(rx + i * 30, ry);
                });
-               this.cameraCenter.x = 400;
-               this.cameras.main.scrollX = 0;
-               this.generateLevel(1);
+               this.cameraCenter.x = rx;
+               this.cameras.main.scrollX = Math.max(0, rx - 400);
             }
 
-            respawnAtCheckpoint() {
-               // Revive both players at the checkpoint position
+            respawnPlayers(fromCheckpoint: boolean) {
+               // Revive both players at the checkpoint (if reached) or the level start.
+               // Keep current hearts (no replenish) — only the chance count decreases.
                this.gameOver = false;
-               this.hearts = 3;
-               const rx = this.checkpointX || 400;
-               const ry = (this.checkpointY || 360) - 40;
+               const useCp = fromCheckpoint && this.checkpointActive && this.checkpointX > 0;
+               const rx = useCp ? this.checkpointX : this.levelStartX;
+               const ry = (useCp ? this.checkpointY : this.levelStartY) - 40;
                [this.p1, this.p2].forEach((plr, i) => {
                   const pr = plr === this.p1 ? 'p1' : 'p2';
                   plr.setVelocity(0, 0);
@@ -2071,14 +2092,16 @@ export default function PhaserGame({
                   (plr.body as any).allowGravity = true;
                   plr.setCollideWorldBounds(true);
                   plr.setAlpha(1); plr.setDepth(10); plr.setScale(1); plr.setFlipX(false);
-                  plr.setData('isBig', false); plr.setData('fireOutfit', false);
+                  plr.setData('isBig', false); plr.setData('fireOutfit', false); plr.setData('starPower', false);
+                  plr.clearTint();
                   plr.setTexture(`${pr}_run1`);
                   plr.setPosition(rx + i * 30, ry);
                });
                this.hasFire = false;
                if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
-               // Snap camera to checkpoint
+               // Snap camera to respawn point
                this.cameraCenter.x = rx;
+               this.cameras.main.scrollX = Math.max(0, rx - 400);
                this.startBGM();
             }
 
@@ -2215,13 +2238,14 @@ export default function PhaserGame({
                if (!autoScrolling) this.cameraCenter.x = Phaser.Math.Clamp(targetX, 400, 11600);
                if (this.myPlayer.x < this.cameras.main.scrollX + 10) this.myPlayer.x = this.cameras.main.scrollX + 10;
 
-               // Instant death if player falls into a pit (below ground level GY=440)
+               // Fell into a pit (below ground level). This is a "fall death" — if chances remain
+               // the player respawns with their CURRENT hearts; it does not zero out hearts.
                if (this.myPlayer.y >= 455 && !this.gameOver) {
-                  // Check if there's ground below the player — if not, it's a pit
                   const playerX = this.myPlayer.x;
                   const hasGround = this.blocks.getChildren().some((b: any) => Math.abs(b.x - playerX) < 20 && b.y >= 430 && b.y <= 480);
                   if (!hasGround) {
-                     this.hearts = 0; this.gameOver = true; socket.emit('gameOver');
+                     this.gameOver = true;
+                     socket.emit('gameOver', { heartsGone: false });
                      this.myPlayer.y = 300;
                      this.playGameOverSound();
                      this.deathAnimation(this.myPlayer);
@@ -2284,7 +2308,7 @@ export default function PhaserGame({
                socket.emit('updateState', { role, x: this.myPlayer.x, y: this.myPlayer.y, anim: animState, flipX: this.myPlayer.flipX, scale: this.myPlayer.scale, fire: this.hasFire });
                const timerDisplay = this.levelTimer >= 0 ? `⏱${Math.floor(this.levelTimer / 60)}:${(this.levelTimer % 60).toString().padStart(2, '0')}` : `⏱0:00`;
                const heartsDisplay = `❤️×${this.hearts}`;
-               const cpDisplay = this.checkpointActive ? `  🚩×${this.checkpointChances}` : '';
+               const cpDisplay = `  🚩×${this.levelChances}${this.checkpointActive ? ' ✓' : ''}`;
                this.uiText.setText(`LEVEL ${this.level}  🪙×${this.coinCount}  ${heartsDisplay}  ${this.score}pts  ${timerDisplay}${cpDisplay}`);
             }
          }
@@ -2353,6 +2377,21 @@ export default function PhaserGame({
    return (
       <div style={{ width: '100vw', height: '100dvh', background: '#111', position: 'relative', overflow: 'hidden', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none', touchAction: 'none' } as React.CSSProperties}>
          <div ref={gameRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', transform: `scale(${gameZoom})`, transformOrigin: 'center center', transition: 'transform 0.15s ease-out' }} />
+         {/* Restart button overlay — shown on game over (reliable taps on mobile) */}
+         {showRestart && (
+            <button
+               onClick={() => { window.dispatchEvent(new CustomEvent('marioDoRestart')); }}
+               style={{
+                  position: 'absolute', top: '58%', left: '50%', transform: 'translate(-50%,-50%)',
+                  zIndex: 300, padding: '16px 36px', fontSize: '1.4rem', fontWeight: 'bold',
+                  fontFamily: 'monospace', color: '#fff', background: '#d50000',
+                  border: '4px solid #fff', borderRadius: '12px', cursor: 'pointer',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.6)', touchAction: 'manipulation',
+               }}
+            >
+               ↻ RESTART GAME
+            </button>
+         )}
          {/* D-Pad — hidden in editor mode */}
          {role !== 'editor' && (buttonLayout ? (
             <div {...touchProps}>
