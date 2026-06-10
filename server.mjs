@@ -23,6 +23,7 @@ let levelTransitionTime = 0; // timestamp of last level transition
 let checkpointTouchedBy = new Set(); // who touched the mid-level checkpoint
 let checkpointActive = false; // both players reached the checkpoint (moves respawn point)
 let levelChances = 3; // shared respawn chances for the current level (resets each level)
+let respawnReadyBy = new Set(); // who has clicked the RESPAWN button after a fall/lava death
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
@@ -202,6 +203,7 @@ app.prepare().then(() => {
     // otherwise from the start of the current level. Does NOT go back to level 1.
     socket.on('restartGame', () => {
       finishedPlayers.clear();
+      respawnReadyBy.clear();
       levelTransitionTime = Date.now();
       levelChances = 3;
       io.to('game').emit('restartGame', { fromCheckpoint: checkpointActive, level: currentLevel });
@@ -209,21 +211,35 @@ app.prepare().then(() => {
 
     socket.on('gameOver', (data) => {
       // heartsGone === true means hearts hit 0 from damage -> immediate, real game over (no respawn).
-      // Only fall/lava deaths (heartsGone === false) consume a chance and respawn with current hearts.
+      // Only fall/lava deaths (heartsGone === false) with chances left offer a RESPAWN button.
       const heartsGone = !!(data && data.heartsGone);
       if (!heartsGone && levelChances > 1) {
-        levelChances--;
-        finishedPlayers.clear();
-        levelTransitionTime = Date.now();
-        io.to('game').emit('checkpointRespawn', { chances: levelChances, fromCheckpoint: checkpointActive });
+        // Don't respawn yet — ask both players to press RESPAWN.
+        respawnReadyBy.clear();
+        io.to('game').emit('offerRespawn', { chances: levelChances });
         return;
       }
       // Out of chances — real game over
       io.to('game').emit('gameOver');
       // Reset chances; keep the player on the current level so Restart resumes from here/checkpoint
       finishedPlayers.clear();
+      respawnReadyBy.clear();
       levelTransitionTime = 0;
       levelChances = 3;
+    });
+
+    // A player pressed the RESPAWN button. Once BOTH players are ready,
+    // consume a chance and respawn everyone (keeping current hearts).
+    socket.on('respawnReady', (role) => {
+      if (role === 'p1' || role === 'p2') respawnReadyBy.add(role);
+      io.to('game').emit('respawnPlayerReady', role);
+      if (respawnReadyBy.has('p1') && respawnReadyBy.has('p2')) {
+        respawnReadyBy.clear();
+        if (levelChances > 1) levelChances--;
+        finishedPlayers.clear();
+        levelTransitionTime = Date.now();
+        io.to('game').emit('checkpointRespawn', { chances: levelChances, fromCheckpoint: checkpointActive });
+      }
     });
   });
 

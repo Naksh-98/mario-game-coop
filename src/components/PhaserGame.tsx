@@ -43,15 +43,23 @@ export default function PhaserGame({
    const [showSaveBtn, setShowSaveBtn] = React.useState(false);
    const [saveData, setSaveData] = React.useState<any>(null);
    const [showRestart, setShowRestart] = React.useState(false);
+   const [showRespawn, setShowRespawn] = React.useState(false);
+   const [respawnWaiting, setRespawnWaiting] = React.useState(false);
 
    React.useEffect(() => {
       const onShow = () => setShowRestart(true);
       const onHide = () => setShowRestart(false);
+      const onShowRespawn = () => { setShowRespawn(true); setRespawnWaiting(false); };
+      const onHideRespawn = () => { setShowRespawn(false); setRespawnWaiting(false); };
       window.addEventListener('marioShowRestart', onShow);
       window.addEventListener('marioHideRestart', onHide);
+      window.addEventListener('marioShowRespawn', onShowRespawn);
+      window.addEventListener('marioHideRespawn', onHideRespawn);
       return () => {
          window.removeEventListener('marioShowRestart', onShow);
          window.removeEventListener('marioHideRestart', onHide);
+         window.removeEventListener('marioShowRespawn', onShowRespawn);
+         window.removeEventListener('marioHideRespawn', onHideRespawn);
       };
    }, []);
    const [hasFirePower, setHasFirePower] = React.useState(false);
@@ -624,13 +632,30 @@ export default function PhaserGame({
                      }
                   } catch (e) { console.warn('Failed to load custom level:', e); }
                });
-               socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
+               socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } this.showGameOverUI(); });
                // Restart after game over (synced) — resume from checkpoint or level start, no reload
                socket.on('restartGame', (data: any) => { this.restartGame(!!(data && data.fromCheckpoint)); });
                // React restart button → emit over the socket
                const onDomRestart = () => { socket.emit('restartGame'); };
                window.addEventListener('marioDoRestart', onDomRestart);
                this.events.once('shutdown', () => window.removeEventListener('marioDoRestart', onDomRestart));
+
+               // Fall/lava death with chances left — offer the RESPAWN button (both players must press).
+               socket.on('offerRespawn', (data: any) => {
+                  if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); }
+                  this.showRespawnUI(data?.chances ?? 0);
+               });
+               // This player (or the other) pressed RESPAWN — show a waiting note.
+               socket.on('respawnPlayerReady', (who: string) => {
+                  if (who !== role) {
+                     const msg = this.add.text(400, 260, 'Other player is ready...', { fontSize: '18px', color: '#fff', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600).setData('gameover', true);
+                     this.time.delayedCall(2000, () => msg.destroy());
+                  }
+               });
+               // React respawn button → tell the server this player is ready
+               const onDomRespawn = () => { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioHideRespawn')); socket.emit('respawnReady', role); };
+               window.addEventListener('marioDoRespawn', onDomRespawn);
+               this.events.once('shutdown', () => window.removeEventListener('marioDoRespawn', onDomRespawn));
 
                // Shared HP: receive updated hearts from the other player
                socket.on('syncHearts', (hearts: number) => { this.hearts = hearts; });
@@ -659,6 +684,9 @@ export default function PhaserGame({
                // Respawn: a player died but chances remain — respawn at checkpoint or level start
                socket.on('checkpointRespawn', (data: any) => {
                   this.levelChances = data.chances ?? 0;
+                  // Clear any game-over/respawn UI
+                  this.children.list.filter((c: any) => c.getData && c.getData('gameover')).forEach((c: any) => c.destroy());
+                  if (typeof window !== 'undefined') { window.dispatchEvent(new CustomEvent('marioHideRestart')); window.dispatchEvent(new CustomEvent('marioHideRespawn')); }
                   this.respawnPlayers(!!data.fromCheckpoint);
                   const msg = this.add.text(400, 200, `Respawn!\n${this.levelChances} chance${this.levelChances === 1 ? '' : 's'} left`, { fontSize: '26px', color: '#ffaa00', stroke: '#000', strokeThickness: 5, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(600);
                   this.time.delayedCall(2000, () => msg.destroy());
@@ -2026,14 +2054,25 @@ export default function PhaserGame({
                      this.tweens.add({ targets: player, y: 700, duration: 900, ease: 'Quad.easeIn' });
                   }});
                }});
-               // Show GAME OVER + RESTART button in center of screen after a delay
+               // The button/text UI is shown by the socket handlers (gameOver -> restart, offerRespawn -> respawn).
+            }
+
+            // Real game over (out of chances / hearts gone): show GAME OVER text + RESTART button.
+            showGameOverUI() {
                this.time.delayedCall(1500, () => {
                   const goText = this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0).setData('gameover', true);
                   this.tweens.add({ targets: goText, alpha: 1, duration: 500 });
-                  // Tell React to show the restart button overlay (reliable taps on mobile)
                   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioShowRestart'));
-                  // Keyboard shortcut still works
                   this.input.keyboard?.once('keydown-ENTER', () => socket.emit('restartGame'));
+               });
+            }
+
+            // Fall/lava death with chances left: show a RESPAWN button. Both players must press it.
+            showRespawnUI(chances: number) {
+               this.time.delayedCall(1200, () => {
+                  const txt = this.add.text(400, 180, `You fell!\n${chances} chance${chances === 1 ? '' : 's'} left`, { fontSize: '34px', color: '#ffaa00', stroke: '#000', strokeThickness: 6, align: 'center', fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0).setData('gameover', true);
+                  this.tweens.add({ targets: txt, alpha: 1, duration: 400 });
+                  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioShowRespawn'));
                });
             }
 
@@ -2390,6 +2429,22 @@ export default function PhaserGame({
                }}
             >
                ↻ RESTART GAME
+            </button>
+         )}
+         {/* Respawn button overlay — shown on fall/lava death when chances remain. Both players must press. */}
+         {showRespawn && (
+            <button
+               onClick={() => { setRespawnWaiting(true); window.dispatchEvent(new CustomEvent('marioDoRespawn')); }}
+               disabled={respawnWaiting}
+               style={{
+                  position: 'absolute', top: '58%', left: '50%', transform: 'translate(-50%,-50%)',
+                  zIndex: 300, padding: '16px 36px', fontSize: '1.4rem', fontWeight: 'bold',
+                  fontFamily: 'monospace', color: '#000', background: respawnWaiting ? '#888' : '#ffc400',
+                  border: '4px solid #fff', borderRadius: '12px', cursor: respawnWaiting ? 'default' : 'pointer',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.6)', touchAction: 'manipulation',
+               }}
+            >
+               {respawnWaiting ? '⏳ WAITING...' : '⟳ RESPAWN'}
             </button>
          )}
          {/* D-Pad — hidden in editor mode */}
