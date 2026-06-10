@@ -1,0 +1,24 @@
+{
+  "name": "Super Mario Co-op Adventure",
+  "short_name": "Mario Co-op",
+  "description": "A 2-player co-op Mario platformer with level editor and in-game video calls",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#d50000",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

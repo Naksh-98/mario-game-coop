@@ -436,6 +436,7 @@ export default function Home() {
 
         {showSettings && <SettingsModal />}
         {showCustomize && <CustomizeControls />}
+        <CallOverlay />
 
         {/* Sky background */}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, #5c94fc 0%, #5c94fc 60%, #8b4513 60%, #8b4513 100%)', zIndex: 0 }} />

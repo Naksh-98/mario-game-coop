@@ -611,6 +611,8 @@ export default function PhaserGame({
                   } catch (e) { console.warn('Failed to load custom level:', e); }
                });
                socket.on('gameOver', () => { if (!this.gameOver) { this.gameOver = true; this.playGameOverSound(); this.deathAnimation(this.myPlayer); } });
+               // Restart the whole game (synced) — both players return to level 1 start, no reload
+               socket.on('restartGame', () => { this.restartGame(); });
 
                // Shared HP: receive updated hearts from the other player
                socket.on('syncHearts', (hearts: number) => { this.hearts = hearts; });
@@ -2003,11 +2005,57 @@ export default function PhaserGame({
                      this.tweens.add({ targets: player, y: 700, duration: 900, ease: 'Quad.easeIn' });
                   }});
                }});
-               // Show GAME OVER in center of screen after a delay
+               // Show GAME OVER + RESTART button in center of screen after a delay
                this.time.delayedCall(1500, () => {
-                  const goText = this.add.text(400, 240, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0);
+                  const goText = this.add.text(400, 200, 'GAME OVER', { fontSize: '64px', color: '#fff', stroke: '#000', strokeThickness: 6, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setAlpha(0).setData('gameover', true);
                   this.tweens.add({ targets: goText, alpha: 1, duration: 500 });
+                  // Restart button — resets both players to level 1 without reloading the page
+                  const btnBg = this.add.rectangle(400, 300, 280, 60, 0xd50000).setScrollFactor(0).setDepth(200).setStrokeStyle(4, 0xffffff).setInteractive({ useHandCursor: true }).setAlpha(0).setData('gameover', true);
+                  const btnText = this.add.text(400, 300, '↻ RESTART GAME', { fontSize: '28px', color: '#fff', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(201).setAlpha(0).setData('gameover', true);
+                  this.tweens.add({ targets: [btnBg, btnText], alpha: 1, duration: 500, delay: 300 });
+                  const doRestart = () => { socket.emit('restartGame'); };
+                  btnBg.on('pointerdown', doRestart);
+                  btnText.setInteractive({ useHandCursor: true }).on('pointerdown', doRestart);
+                  this.input.keyboard?.once('keydown-ENTER', doRestart);
                });
+            }
+
+            restartGame() {
+               // Remove game-over UI elements
+               this.children.list.filter((c: any) => c.getData && c.getData('gameover')).forEach((c: any) => c.destroy());
+               // Reset all game state and rebuild level 1 — no page reload
+               this.gameOver = false;
+               this.gameWon = false;
+               this.waitingForOther = false;
+               this.countingDown = false;
+               this.finishedSet.clear();
+               this.hearts = 3;
+               this.score = 0;
+               this.coinCount = 0;
+               this.level = 1;
+               this.isBig = false;
+               this.hasFire = false;
+               this.checkpointActive = false;
+               this.checkpointTouched = false;
+               this.checkpointChances = 3;
+               this.warping = false;
+               if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
+               // Revive both players
+               [this.p1, this.p2].forEach((plr, i) => {
+                  const pr = plr === this.p1 ? 'p1' : 'p2';
+                  plr.setVelocity(0, 0);
+                  (plr.body as any).enable = true;
+                  (plr.body as any).allowGravity = true;
+                  plr.setCollideWorldBounds(true);
+                  plr.setAlpha(1); plr.setDepth(10); plr.setScale(1); plr.setFlipX(false);
+                  plr.setData('isBig', false); plr.setData('fireOutfit', false); plr.setData('starPower', false);
+                  plr.clearTint();
+                  plr.setTexture(`${pr}_run1`);
+                  plr.setPosition(i === 0 ? 150 : 80, 360);
+               });
+               this.cameraCenter.x = 400;
+               this.cameras.main.scrollX = 0;
+               this.generateLevel(1);
             }
 
             respawnAtCheckpoint() {

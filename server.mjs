@@ -198,6 +198,19 @@ app.prepare().then(() => {
       }
     });
 
+    // Restart the whole game back to level 1 (no page reload) — synced to both players
+    socket.on('restartGame', () => {
+      currentLevel = 1;
+      finishedPlayers.clear();
+      levelTransitionTime = Date.now();
+      checkpointTouchedBy.clear();
+      checkpointActive = false;
+      checkpointChances = 3;
+      state.p1 = { x: 150, y: 360, anim: 'run1', flipX: false, connected: false };
+      state.p2 = { x: 80, y: 360, anim: 'run1', flipX: false, connected: false };
+      io.to('game').emit('restartGame');
+    });
+
     socket.on('gameOver', () => {
       // If a checkpoint is active and chances remain, respawn instead of full game over
       if (checkpointActive && checkpointChances > 1) {
