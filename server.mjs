@@ -17,7 +17,7 @@ let state = {
   p1: { x: 150, y: 360, anim: 'run1', flipX: false, connected: false },
   p2: { x: 80, y: 360, anim: 'run1', flipX: false, connected: false },
 };
-let currentLevel = 1;
+let currentLevel = 5;
 let finishedPlayers = new Set(); // tracks who touched the flag this level
 let levelTransitionTime = 0; // timestamp of last level transition
 let checkpointTouchedBy = new Set(); // who touched the mid-level checkpoint

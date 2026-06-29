@@ -137,10 +137,12 @@ export default function PhaserGame({
             };
             game = new Phaser.Game(editorConfig);
             // Pass onExit to the scene via scene init data
-            game.scene.start('LevelEditorScene', { onExit: () => {
-               if (game) { game.destroy(true); game = null; }
-               onExit?.();
-            }});
+            game.scene.start('LevelEditorScene', {
+               onExit: () => {
+                  if (game) { game.destroy(true); game = null; }
+                  onExit?.();
+               }
+            });
          });
 
          return () => {
@@ -208,7 +210,7 @@ export default function PhaserGame({
             hearts = 3;
             gameOver = false;
             gameWon = false;
-            waitingForOther = false; 
+            waitingForOther = false;
             countingDown = false;
             level = 1;
             isBig = false;
@@ -270,18 +272,18 @@ export default function PhaserGame({
             }
 
             playJumpSound() {
-               try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.9 }); } catch (e) {}
+               try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.9 }); } catch (e) { }
             }
 
             playStompSound() {
-               if (this.cache.audio.exists('sfx_stomp')) { try { this.sound.play('sfx_stomp', { volume: sfxVolumeRef.current }); return; } catch (e) {} }
+               if (this.cache.audio.exists('sfx_stomp')) { try { this.sound.play('sfx_stomp', { volume: sfxVolumeRef.current }); return; } catch (e) { } }
                if (!this.audioCtx) return;
                this.playAudio(120, 'square', 0.1);
                setTimeout(() => this.playAudio(800, 'sine', 0.05), 20);
             }
 
             playHurtSound() {
-               if (this.cache.audio.exists('sfx_powerdown')) { try { this.sound.play('sfx_powerdown', { volume: sfxVolumeRef.current }); return; } catch (e) {} }
+               if (this.cache.audio.exists('sfx_powerdown')) { try { this.sound.play('sfx_powerdown', { volume: sfxVolumeRef.current }); return; } catch (e) { } }
                if (!this.audioCtx) return;
                [300, 250, 200, 150].forEach((f, i) => {
                   setTimeout(() => this.playAudio(f, 'sawtooth', 0.1), i * 80);
@@ -289,7 +291,7 @@ export default function PhaserGame({
             }
 
             playCoinSound() {
-               try { this.sound.play('coin', { volume: sfxVolumeRef.current }); } catch (e) {}
+               try { this.sound.play('coin', { volume: sfxVolumeRef.current }); } catch (e) { }
             }
 
             playPowerUpSound() {
@@ -301,13 +303,13 @@ export default function PhaserGame({
             }
 
             playSfx(key: string, vol = 1) {
-               if (this.cache.audio.exists(key)) { try { this.sound.play(key, { volume: sfxVolumeRef.current * vol }); return true; } catch (e) {} }
+               if (this.cache.audio.exists(key)) { try { this.sound.play(key, { volume: sfxVolumeRef.current * vol }); return true; } catch (e) { } }
                return false;
             }
             play1UpSound() { if (!this.playSfx('sfx_1up')) this.playPowerUpSound(); }
             playBigSound() { if (!this.playSfx('sfx_getbig')) this.playPowerUpSound(); }
             playStarSound() { if (!this.playSfx('sfx_starpower')) this.playPowerUpSound(); }
-            playFireballSound() { if (!this.playSfx('sfx_fireball', 0.8)) { try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) {} } }
+            playFireballSound() { if (!this.playSfx('sfx_fireball', 0.8)) { try { this.sound.play('jump', { volume: sfxVolumeRef.current * 0.4 }); } catch (e) { } } }
             playBlockBreakSound() { if (!this.playSfx('sfx_blockbreak')) this.playStompSound(); }
             playSaveGameSound() { if (!this.playSfx('sfx_savegame')) this.playPowerUpSound(); }
             playFlagCrossSound() { this.playSfx('sfx_flagcross'); }
@@ -408,7 +410,7 @@ export default function PhaserGame({
                document.addEventListener('pointerdown', resumeCtx, { once: false });
                document.addEventListener('touchstart', resumeCtx, { once: false });
                document.addEventListener('keydown', resumeCtx, { once: false });
-               
+
                // Initialize stats from React props closure
                this.hearts = initialHearts;
                this.level = initialLevel;
@@ -474,6 +476,8 @@ export default function PhaserGame({
                this.p2.setBodySize(18, 28); this.p2.setOffset(4, 6);
                this.p1.setCollideWorldBounds(true); this.p2.setCollideWorldBounds(true);
                this.p1.setDepth(10); this.p2.setDepth(10);
+               this.myPlayer = role === 'p1' ? this.p1 : this.p2;
+               this.otherPlayer = role === 'p1' ? this.p2 : this.p1;
 
                this.physics.add.collider(this.p1, this.blocks, this.hitBlock as any, undefined, this);
                this.physics.add.collider(this.p2, this.blocks, this.hitBlock as any, undefined, this);
@@ -484,19 +488,18 @@ export default function PhaserGame({
                this.physics.add.collider(this.mushrooms, this.blocks);
                this.physics.add.overlap(this.p1, this.mushrooms, this.collectMushroom as any, undefined, this);
                this.physics.add.overlap(this.p2, this.mushrooms, this.collectMushroom as any, undefined, this);
-               this.physics.add.overlap(this.p1, this.piranhas, () => this.takeDamage(this.p1), undefined, this);
-               this.physics.add.overlap(this.p2, this.piranhas, () => this.takeDamage(this.p2), undefined, this);
+               // Hazard overlaps only for the LOCAL player — prevents the remote player's
+               // position (which lags slightly) from triggering damage on this client.
+               this.physics.add.overlap(this.myPlayer, this.piranhas, () => this.takeDamage(this.myPlayer), undefined, this);
                this.physics.add.overlap(this.p1, this.enemies, this.hitEnemy as any, undefined, this);
                this.physics.add.overlap(this.p2, this.enemies, this.hitEnemy as any, undefined, this);
-               this.physics.add.overlap(this.p1, this.fireballs, () => this.takeDamage(this.p1), undefined, this);
-               this.physics.add.overlap(this.p2, this.fireballs, () => this.takeDamage(this.p2), undefined, this);
+               this.physics.add.overlap(this.myPlayer, this.fireballs, () => this.takeDamage(this.myPlayer), undefined, this);
                // Player fireballs bounce on blocks and destroy enemies
                this.physics.add.collider(this.playerFireballs, this.blocks, (fb: any) => { fb.setVelocityY(-220); });
                this.physics.add.collider(this.playerFireballs, this.movingPlatforms, (fb: any) => { fb.setVelocityY(-220); });
                this.physics.add.overlap(this.playerFireballs, this.enemies, this.fireballHitEnemy as any, undefined, this);
                this.physics.add.overlap(this.playerFireballs, this.piranhas, this.fireballHitPiranha as any, undefined, this);
-               this.physics.add.overlap(this.p1, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.gameOver = true; socket.emit('gameOver', { heartsGone: false }); this.playGameOverSound(); this.deathAnimation(this.p1); } } else { this.takeDamage(this.p1); } }, undefined, this);
-               this.physics.add.overlap(this.p2, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.gameOver = true; socket.emit('gameOver', { heartsGone: false }); this.playGameOverSound(); this.deathAnimation(this.p2); } } else { this.takeDamage(this.p2); } }, undefined, this);
+               this.physics.add.overlap(this.myPlayer, this.obstacles, (_p: any, obs: any) => { if (obs.getData && obs.getData('isLava')) { if (!this.gameOver) { this.gameOver = true; socket.emit('gameOver', { heartsGone: false }); this.playGameOverSound(); this.deathAnimation(this.myPlayer); } } else { this.takeDamage(this.myPlayer); } }, undefined, this);
                this.physics.add.overlap(this.p1, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p2, this.flags, this.touchFlag as any, undefined, this);
                this.physics.add.overlap(this.p1, this.checkpoints, this.touchCheckpoint as any, undefined, this);
@@ -504,8 +507,7 @@ export default function PhaserGame({
                this.physics.add.overlap(this.p1, this.coins, this.collectCoin as any, undefined, this);
                this.physics.add.overlap(this.p2, this.coins, this.collectCoin as any, undefined, this);
 
-               this.myPlayer = role === 'p1' ? this.p1 : this.p2;
-               this.otherPlayer = role === 'p1' ? this.p2 : this.p1;
+               // (myPlayer/otherPlayer already set above, before physics registrations)
                this.cursors = this.input.keyboard!.createCursorKeys();
                this.keyW = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W);
                this.keyA = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A);
@@ -549,7 +551,7 @@ export default function PhaserGame({
                   // When both players have crossed the flag, play the celebratory SFX
                   if (this.finishedSet.has('p1') && this.finishedSet.has('p2')) { this.playFlagCrossSound(); }
                });
-               
+
                socket.on('startCountdown', (nextLvl: number) => {
                   this.countingDown = true; this.gameWon = true; let tick = 10;
                   const countNotes = [220, 247, 262, 294, 330, 349, 392, 440, 494, 523];
@@ -596,21 +598,23 @@ export default function PhaserGame({
                         }
                      });
                   }
-                  
+
                   const doTick = () => {
                      if (tick <= 0) {
                         this.playAudio(784, 'square', 0.1); setTimeout(() => this.playAudio(880, 'square', 0.1), 100); setTimeout(() => this.playAudio(988, 'square', 0.1), 200); setTimeout(() => this.playAudio(1047, 'square', 0.3), 300);
-                        this.tweens.add({ targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
-                           this.countdownText.setAlpha(0); this.countingDown = false; this.waitingForOther = false; this.finishedSet.clear(); this.level = nextLvl; this.gameWon = false;
-                           // For level 4 (pillar platforming), spawn from the sky to land on first pillar
-                           if (nextLvl === 4) {
-                              this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0); this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
-                           } else {
-                              this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0); this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+                        this.tweens.add({
+                           targets: this.countdownText, alpha: 0, duration: 400, onComplete: () => {
+                              this.countdownText.setAlpha(0); this.countingDown = false; this.waitingForOther = false; this.finishedSet.clear(); this.level = nextLvl; this.gameWon = false;
+                              // For level 4 (pillar platforming), spawn from the sky to land on first pillar
+                              if (nextLvl === 4) {
+                                 this.p1.setPosition(150, 100); this.p1.setVelocity(0, 0); this.p2.setPosition(100, 100); this.p2.setVelocity(0, 0);
+                              } else {
+                                 this.p1.setPosition(150, 360); this.p1.setVelocity(0, 0); this.p2.setPosition(80, 360); this.p2.setVelocity(0, 0);
+                              }
+                              this.cameraCenter.setPosition(400, 240); this.cameras.main.scrollX = 0;
+                              this.generateLevel(this.level);
                            }
-                           this.cameraCenter.setPosition(400, 240); this.cameras.main.scrollX = 0;
-                           this.generateLevel(this.level);
-                        }});
+                        });
                         return;
                      }
                      this.playAudio(countNotes[10 - tick], 'square', 0.18); this.playAudio(80, 'sawtooth', 0.15);
@@ -665,7 +669,7 @@ export default function PhaserGame({
                socket.on('shootFireball', (d: any) => { this.spawnFireball(d.x, d.y, d.dir, d.owner); });
 
                // Warp pipe: the other player triggered a warp — follow them
-               socket.on('warp', (d: any) => { if (!this.warping) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) {} this.doWarp(d.destX, d.destY); } });
+               socket.on('warp', (d: any) => { if (!this.warping) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) { } this.doWarp(d.destX, d.destY); } });
 
                // Checkpoint: a player touched it (show partial banner)
                socket.on('checkpointPlayerTouched', (_who: string) => {
@@ -752,51 +756,51 @@ export default function PhaserGame({
                };
                const addGoomba = (ex: number, ey = GY - B) => { const en = this.enemies.create(ex, ey, 'enemy') as Phaser.Physics.Arcade.Sprite; (en.body as any).allowGravity = true; en.setVelocityX(-eSpeed); en.setData('dir', -eSpeed); (en.body as any).setBounceX(1); };
                const addKoopa = (ex: number, ey = GY - B) => { const kp = this.enemies.create(ex, ey, 'koopa') as Phaser.Physics.Arcade.Sprite; (kp.body as any).allowGravity = true; kp.setVelocityX(-eSpeed * 0.8); kp.setData('dir', -eSpeed * 0.8); (kp.body as any).setBounceX(1); };
-               const addMovPlat = (px: number, py: number, spd: number, range = 90) => { const pl = this.movingPlatforms.create(px, py, 'movingPlat') as Phaser.Physics.Arcade.Sprite; pl.setData('originX', px); pl.setData('speed', spd); pl.setData('range', range); (pl.body as any).allowGravity = false; (pl.body as any).immovable = true; };                
+               const addMovPlat = (px: number, py: number, spd: number, range = 90) => { const pl = this.movingPlatforms.create(px, py, 'movingPlat') as Phaser.Physics.Arcade.Sprite; pl.setData('originX', px); pl.setData('speed', spd); pl.setData('range', range); (pl.body as any).allowGravity = false; (pl.body as any).immovable = true; };
                const buildCastle = (cx: number) => {
-                   this.castleX = cx;
+                  this.castleX = cx;
 
-                   // Door background (black rectangle, depth 1, behind players)
-                   const doorBg = this.add.rectangle(cx + 80, GY - 48, 32, 64, 0x000000).setDepth(1);
-                   doorBg.setData('decoration', true);
+                  // Door background (black rectangle, depth 1, behind players)
+                  const doorBg = this.add.rectangle(cx + 80, GY - 48, 32, 64, 0x000000).setDepth(1);
+                  doorBg.setData('decoration', true);
 
-                   for (let col = 0; col < 5; col++) {
-                      for (let row = 0; row < 4; row++) {
-                         // Leave empty space for the door (col 2, row 0, 1, 2)
-                         if (col === 2 && row < 3) continue;
+                  for (let col = 0; col < 5; col++) {
+                     for (let row = 0; row < 4; row++) {
+                        // Leave empty space for the door (col 2, row 0, 1, 2)
+                        if (col === 2 && row < 3) continue;
 
-                         const wall = this.blocks.create(cx + col * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
-                         wall.setDepth(12); // Front of players
-                      }
-                   }
-                   for (let row = 4; row < 7; row++) {
-                      const wallL = this.blocks.create(cx + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
-                      const wallR = this.blocks.create(cx + 4 * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
-                      wallL.setDepth(12);
-                      wallR.setDepth(12);
-                   }
+                        const wall = this.blocks.create(cx + col * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                        wall.setDepth(12); // Front of players
+                     }
+                  }
+                  for (let row = 4; row < 7; row++) {
+                     const wallL = this.blocks.create(cx + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                     const wallR = this.blocks.create(cx + 4 * B + B / 2, GY - row * B, 'castle_wall') as Phaser.Physics.Arcade.Sprite;
+                     wallL.setDepth(12);
+                     wallR.setDepth(12);
+                  }
 
-                   // Windows (black rectangles with border decoration on col 1 & 3, row 3)
-                   // Left window
-                   const winL = this.add.rectangle(cx + 48, GY - 96, 12, 18, 0x000000).setDepth(13);
-                   winL.setData('decoration', true);
-                   const winFrameL = this.add.graphics().setDepth(13).setData('decoration', true);
-                   winFrameL.lineStyle(2, 0x5a3010, 1);
-                   winFrameL.strokeRect(cx + 42, GY - 105, 12, 18);
+                  // Windows (black rectangles with border decoration on col 1 & 3, row 3)
+                  // Left window
+                  const winL = this.add.rectangle(cx + 48, GY - 96, 12, 18, 0x000000).setDepth(13);
+                  winL.setData('decoration', true);
+                  const winFrameL = this.add.graphics().setDepth(13).setData('decoration', true);
+                  winFrameL.lineStyle(2, 0x5a3010, 1);
+                  winFrameL.strokeRect(cx + 42, GY - 105, 12, 18);
 
-                   // Right window
-                   const winR = this.add.rectangle(cx + 112, GY - 96, 12, 18, 0x000000).setDepth(13);
-                   winR.setData('decoration', true);
-                   const winFrameR = this.add.graphics().setDepth(13).setData('decoration', true);
-                   winFrameR.lineStyle(2, 0x5a3010, 1);
-                   winFrameR.strokeRect(cx + 106, GY - 105, 12, 18);
+                  // Right window
+                  const winR = this.add.rectangle(cx + 112, GY - 96, 12, 18, 0x000000).setDepth(13);
+                  winR.setData('decoration', true);
+                  const winFrameR = this.add.graphics().setDepth(13).setData('decoration', true);
+                  winFrameR.lineStyle(2, 0x5a3010, 1);
+                  winFrameR.strokeRect(cx + 106, GY - 105, 12, 18);
 
-                   // Door frame outline
-                   const doorFrame = this.add.graphics().setDepth(13).setData('decoration', true);
-                   doorFrame.lineStyle(3, 0x5a3010, 1);
-                   doorFrame.strokeRect(cx + 64, GY - 80, 32, 64);
-                };
-                const buildStairs = (startX: number, tex = 'block') => { for (let step = 0; step < 8; step++) { const sx = startX + step * B; for (let row = 0; row <= step; row++) this.blocks.create(sx + B / 2, GY - row * B, tex); } };
+                  // Door frame outline
+                  const doorFrame = this.add.graphics().setDepth(13).setData('decoration', true);
+                  doorFrame.lineStyle(3, 0x5a3010, 1);
+                  doorFrame.strokeRect(cx + 64, GY - 80, 32, 64);
+               };
+               const buildStairs = (startX: number, tex = 'block') => { for (let step = 0; step < 8; step++) { const sx = startX + step * B; for (let row = 0; row <= step; row++) this.blocks.create(sx + B / 2, GY - row * B, tex); } };
 
                // ─── Reusable WARP PIPE BONUS ROOM ──────────────────────────
                // Builds a hidden bonus room far to the right and registers warp zones.
@@ -863,7 +867,7 @@ export default function PhaserGame({
                   [[180, 1], [500, 1.4], [1900, 1], [3600, 1.2], [5600, 0.9]].forEach(([hx, sc]) => this.add.image(hx as number, GY - 22, 'hill').setScale(sc as number).setDepth(-3).setData('decoration', true));
                   for (let x = 0; x < 8500; x += B) { if (!(x >= 2000 && x < 2000 + B * 3)) { this.blocks.create(x + B / 2, GY, 'block'); this.blocks.create(x + B / 2, GY2, 'block'); } }
                   addPipe(480, 2); addPipe(1260, 3); addPipe(2300, 2);
-                  const BH = GY - 4 * B; [736, 800, 864, 928].forEach((bx, i) => { if (i === 1 || i === 2) { const qb = this.qBlocks.create(bx, BH, 'qblock'); qb.setData('active', true); } else this.blocks.create(bx, BH, 'block'); });
+                  const BH = GY - 4 * B;[736, 800, 864, 928].forEach((bx, i) => { if (i === 1 || i === 2) { const qb = this.qBlocks.create(bx, BH, 'qblock'); qb.setData('active', true); } else this.blocks.create(bx, BH, 'block'); });
                   [1600, 1664, 1728].forEach(bx => { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); });
                   this.blocks.create(1792, GY - 5 * B, 'block');
                   [2976, 3040, 3104, 3168].forEach((bx, i) => { if (i % 2 === 0) this.blocks.create(bx, GY - 5 * B, 'block'); else { const qb = this.qBlocks.create(bx, GY - 5 * B, 'qblock'); qb.setData('active', true); } });
@@ -880,19 +884,23 @@ export default function PhaserGame({
                      const hb = this.enemies.create(hx, hy, 'hammer_bro') as Phaser.Physics.Arcade.Sprite;
                      (hb.body as any).allowGravity = true;
                      hb.setVelocityX(40); hb.setData('dir', 40); (hb.body as any).setBounceX(1);
-                     this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
-                        if (!hb.active || this.gameOver) return;
-                        hb.setVelocityY(-350);
-                     }});
-                     this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
-                        if (!hb.active || this.gameOver || this.gameWon) return;
-                        const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
-                        (hammer.body as any).allowGravity = true;
-                        hammer.setVelocityX(hb.flipX ? 120 : -120);
-                        hammer.setVelocityY(-300);
-                        this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
-                        this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
-                     }});
+                     this.time.addEvent({
+                        delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
+                           if (!hb.active || this.gameOver) return;
+                           hb.setVelocityY(-350);
+                        }
+                     });
+                     this.time.addEvent({
+                        delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
+                           if (!hb.active || this.gameOver || this.gameWon) return;
+                           const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
+                           (hammer.body as any).allowGravity = true;
+                           hammer.setVelocityX(hb.flipX ? 120 : -120);
+                           hammer.setVelocityY(-300);
+                           this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
+                           this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
+                        }
+                     });
                   };
                   addHammerBro(3500, GY - B * 2); addHammerBro(5100, GY - B * 2);
                   // Coins
@@ -957,14 +965,16 @@ export default function PhaserGame({
                      for (let h = 0; h < height; h++) this.blocks.create(cx, GY - B * (h + 1) + B / 2, 'cannon');
                      // Spawn bullet bills periodically from this cannon
                      const cannonTop = GY - B * height;
-                     this.time.addEvent({ delay: 2500 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
-                        if (this.gameOver || this.gameWon || this.countingDown) return;
-                        const bullet = this.enemies.create(cx - 20, cannonTop - 10, 'bullet_bill') as Phaser.Physics.Arcade.Sprite;
-                        (bullet.body as any).allowGravity = false;
-                        bullet.setVelocityX(-180);
-                        bullet.setData('dir', -180);
-                        this.time.delayedCall(5000, () => { if (bullet && bullet.active) bullet.destroy(); });
-                     }});
+                     this.time.addEvent({
+                        delay: 2500 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                           if (this.gameOver || this.gameWon || this.countingDown) return;
+                           const bullet = this.enemies.create(cx - 20, cannonTop - 10, 'bullet_bill') as Phaser.Physics.Arcade.Sprite;
+                           (bullet.body as any).allowGravity = false;
+                           bullet.setVelocityX(-180);
+                           bullet.setData('dir', -180);
+                           this.time.delayedCall(5000, () => { if (bullet && bullet.active) bullet.destroy(); });
+                        }
+                     });
                   };
                   addCannon(1400, 2); addCannon(2700, 2); addCannon(3900, 3); addCannon(5500, 2); addCannon(6400, 2);
 
@@ -974,20 +984,24 @@ export default function PhaserGame({
                      (hb.body as any).allowGravity = true;
                      hb.setVelocityX(40); hb.setData('dir', 40); (hb.body as any).setBounceX(1);
                      // Jump periodically
-                     this.time.addEvent({ delay: 1800 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
-                        if (!hb.active || this.gameOver) return;
-                        hb.setVelocityY(-350);
-                     }});
+                     this.time.addEvent({
+                        delay: 1800 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
+                           if (!hb.active || this.gameOver) return;
+                           hb.setVelocityY(-350);
+                        }
+                     });
                      // Throw hammers
-                     this.time.addEvent({ delay: 1200 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
-                        if (!hb.active || this.gameOver || this.gameWon) return;
-                        const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
-                        (hammer.body as any).allowGravity = true;
-                        hammer.setVelocityX(hb.flipX ? 120 : -120);
-                        hammer.setVelocityY(-300);
-                        this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
-                        this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
-                     }});
+                     this.time.addEvent({
+                        delay: 1200 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
+                           if (!hb.active || this.gameOver || this.gameWon) return;
+                           const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
+                           (hammer.body as any).allowGravity = true;
+                           hammer.setVelocityX(hb.flipX ? 120 : -120);
+                           hammer.setVelocityY(-300);
+                           this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
+                           this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
+                        }
+                     });
                   };
                   addHammerBro(1900, GY - B * 2); addHammerBro(4200, GY - B * 2); addHammerBro(5900, GY - B * 2);
 
@@ -1100,7 +1114,7 @@ export default function PhaserGame({
                   [[320, 340], [720, 360], [1200, 320], [1870, 340], [2340, 360], [2800, 380], [3260, 330], [3720, 370], [4180, 380], [4640, 340], [5100, 380]].forEach(([ex, ey], i) => i % 3 === 0 ? addKoopa(ex as number, (ey as number) - B) : addGoomba(ex as number, (ey as number) - B));
 
                   // Coins placed above each pillar (2 rows matching pillar width)
-                  const pillarData: [number, number, number][] = [[80,390,4],[320,340,3],[530,290,2],[720,360,3],[960,240,3],[1200,320,2],[1420,380,3],[1650,270,2],[1870,340,3],[2120,220,2],[2340,360,3],[2580,290,2],[2800,380,3],[3040,260,2],[3260,330,3],[3500,230,2],[3720,370,3],[3960,300,2],[4180,380,3],[4420,250,2],[4640,340,3],[4880,280,2],[5100,380,3],[5340,310,2],[5560,360,3]];
+                  const pillarData: [number, number, number][] = [[80, 390, 4], [320, 340, 3], [530, 290, 2], [720, 360, 3], [960, 240, 3], [1200, 320, 2], [1420, 380, 3], [1650, 270, 2], [1870, 340, 3], [2120, 220, 2], [2340, 360, 3], [2580, 290, 2], [2800, 380, 3], [3040, 260, 2], [3260, 330, 3], [3500, 230, 2], [3720, 370, 3], [3960, 300, 2], [4180, 380, 3], [4420, 250, 2], [4640, 340, 3], [4880, 280, 2], [5100, 380, 3], [5340, 310, 2], [5560, 360, 3]];
                   pillarData.forEach(([px, topY, width]) => {
                      for (let row = 0; row < 2; row++) {
                         for (let i = 0; i < width; i++) {
@@ -1138,11 +1152,13 @@ export default function PhaserGame({
                      this.tweens.add({ targets: lv, x: lv.x + 16, duration: 1200 + Phaser.Math.Between(0, 400), yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
                   }
                   // Lava bubbles popping up
-                  this.time.addEvent({ delay: 800, loop: true, callback: () => {
-                     if (this.gameOver || this.gameWon) return;
-                     const bx = Phaser.Math.Between(100, 5000); const bubble = this.add.circle(bx, GY, 6, 0xff6600).setDepth(0).setData('decoration', true);
-                     this.tweens.add({ targets: bubble, y: GY - Phaser.Math.Between(30, 80), alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 600, onComplete: () => bubble.destroy() });
-                  }});
+                  this.time.addEvent({
+                     delay: 800, loop: true, callback: () => {
+                        if (this.gameOver || this.gameWon) return;
+                        const bx = Phaser.Math.Between(100, 5000); const bubble = this.add.circle(bx, GY, 6, 0xff6600).setDepth(0).setData('decoration', true);
+                        this.tweens.add({ targets: bubble, y: GY - Phaser.Math.Between(30, 80), alpha: 0, scaleX: 0.3, scaleY: 0.3, duration: 600, onComplete: () => bubble.destroy() });
+                     }
+                  });
 
                   // Ground - floor sections (~1000px each) with WIDE lava pits between them
                   // Floor 1: x=0 to x=1000
@@ -1176,13 +1192,15 @@ export default function PhaserGame({
 
                   // Fireballs shooting up from lava pits
                   [1200, 1400, 2800, 3100].forEach(s => {
-                     this.time.addEvent({ delay: 2200 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
-                        if (this.gameOver || this.gameWon) return;
-                        const fb = this.fireballs.create(s, GY + 10, 'fireball') as Phaser.Physics.Arcade.Sprite;
-                        (fb.body as any).allowGravity = false;
-                        fb.setVelocityY(-350);
-                        this.time.delayedCall(2000, () => { if (fb && fb.active) fb.destroy(); });
-                     }});
+                     this.time.addEvent({
+                        delay: 2200 + Phaser.Math.Between(0, 800), loop: true, callback: () => {
+                           if (this.gameOver || this.gameWon) return;
+                           const fb = this.fireballs.create(s, GY + 10, 'fireball') as Phaser.Physics.Arcade.Sprite;
+                           (fb.body as any).allowGravity = false;
+                           fb.setVelocityY(-350);
+                           this.time.delayedCall(2000, () => { if (fb && fb.active) fb.destroy(); });
+                        }
+                     });
                   });
 
                   // Enemies
@@ -1269,20 +1287,22 @@ export default function PhaserGame({
                         (fb.body as any).allowGravity = false;
                         fb.setVelocityX(velX);
                         if (!fireLeft) fb.setFlipX(true);
-                        try { this.sound.play('bowserfire', { volume: sfxVolumeRef.current * 0.8 }); } catch (e) {}
+                        try { this.sound.play('bowserfire', { volume: sfxVolumeRef.current * 0.8 }); } catch (e) { }
                         this.time.delayedCall(4000, () => { if (fb && fb.active) fb.destroy(); });
                         this.time.delayedCall(2000, bowserFire);
                      };
                      this.time.delayedCall(2000, bowserFire);
 
                      // Bowser changes direction randomly
-                     this.time.addEvent({ delay: 2000, loop: true, callback: () => {
-                        if (!bowser.active || this.gameOver || this.gameWon) return;
-                        if (Math.random() < 0.4) {
-                           const newSpeed = Phaser.Math.Between(60, 140) * (Math.random() < 0.5 ? -1 : 1);
-                           bowser.setVelocityX(newSpeed);
+                     this.time.addEvent({
+                        delay: 2000, loop: true, callback: () => {
+                           if (!bowser.active || this.gameOver || this.gameWon) return;
+                           if (Math.random() < 0.4) {
+                              const newSpeed = Phaser.Math.Between(60, 140) * (Math.random() < 0.5 ? -1 : 1);
+                              bowser.setVelocityX(newSpeed);
+                           }
                         }
-                     }});
+                     });
                   };
                   bowser.setData('activateFn', activateBowser);
 
@@ -1313,13 +1333,15 @@ export default function PhaserGame({
                // Start level timer (2 minutes, then -1 HP every 30s)
                this.levelTimer = 120;
                if (this.timerEvent) this.timerEvent.destroy();
-               this.timerEvent = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
-                  if (this.gameOver || this.gameWon || this.countingDown) return;
-                  this.levelTimer--;
-                  if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
-                     this.takeDamage(this.myPlayer);
+               this.timerEvent = this.time.addEvent({
+                  delay: 1000, loop: true, callback: () => {
+                     if (this.gameOver || this.gameWon || this.countingDown) return;
+                     this.levelTimer--;
+                     if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
+                        this.takeDamage(this.myPlayer);
+                     }
                   }
-               }});
+               });
             }
 
             showComingSoon(lvl: number) {
@@ -1380,14 +1402,16 @@ export default function PhaserGame({
                   const hb = this.enemies.create(hx, hy, 'hammer_bro') as Phaser.Physics.Arcade.Sprite;
                   (hb.body as any).allowGravity = true;
                   hb.setVelocityX(40); hb.setData('dir', 40); (hb.body as any).setBounceX(1);
-                  this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => { if (!hb.active || this.gameOver) return; hb.setVelocityY(-350); }});
-                  this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
-                     if (!hb.active || this.gameOver || this.gameWon) return;
-                     const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
-                     (hammer.body as any).allowGravity = true; hammer.setVelocityX(hb.flipX ? 120 : -120); hammer.setVelocityY(-300);
-                     this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
-                     this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
-                  }});
+                  this.time.addEvent({ delay: 2000 + Phaser.Math.Between(0, 800), loop: true, callback: () => { if (!hb.active || this.gameOver) return; hb.setVelocityY(-350); } });
+                  this.time.addEvent({
+                     delay: 1500 + Phaser.Math.Between(0, 600), loop: true, callback: () => {
+                        if (!hb.active || this.gameOver || this.gameWon) return;
+                        const hammer = this.enemies.create(hb.x, hb.y - 16, 'hammer') as Phaser.Physics.Arcade.Sprite;
+                        (hammer.body as any).allowGravity = true; hammer.setVelocityX(hb.flipX ? 120 : -120); hammer.setVelocityY(-300);
+                        this.tweens.add({ targets: hammer, angle: 360, duration: 400, repeat: -1 });
+                        this.time.delayedCall(3000, () => { if (hammer && hammer.active) hammer.destroy(); });
+                     }
+                  });
                };
                const buildCastle = (cx: number) => {
                   this.castleX = cx;
@@ -1613,14 +1637,16 @@ export default function PhaserGame({
                      case 'bullet_bill_cannon': {
                         this.blocks.create(x, y, 'cannon');
                         const cannonY = y;
-                        this.time.addEvent({ delay: 2500 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
-                           if (this.gameOver || this.gameWon || this.countingDown) return;
-                           const bullet = this.enemies.create(x - 20, cannonY - 20, 'bullet_bill') as Phaser.Physics.Arcade.Sprite;
-                           (bullet.body as any).allowGravity = false;
-                           bullet.setVelocityX(-180);
-                           bullet.setData('dir', -180);
-                           this.time.delayedCall(5000, () => { if (bullet && bullet.active) bullet.destroy(); });
-                        }});
+                        this.time.addEvent({
+                           delay: 2500 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                              if (this.gameOver || this.gameWon || this.countingDown) return;
+                              const bullet = this.enemies.create(x - 20, cannonY - 20, 'bullet_bill') as Phaser.Physics.Arcade.Sprite;
+                              (bullet.body as any).allowGravity = false;
+                              bullet.setVelocityX(-180);
+                              bullet.setData('dir', -180);
+                              this.time.delayedCall(5000, () => { if (bullet && bullet.active) bullet.destroy(); });
+                           }
+                        });
                         break;
                      }
                      case 'fire_bar': {
@@ -1634,24 +1660,28 @@ export default function PhaserGame({
                         }
                         // Create a tween to rotate the balls
                         let angle = 0;
-                        this.time.addEvent({ delay: 30, loop: true, callback: () => {
-                           if (this.gameOver || this.gameWon) return;
-                           angle += 0.04;
-                           barBalls.forEach((ball, i) => {
-                              const dist = (i + 1) * 14;
-                              ball.setPosition(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
-                           });
-                        }});
+                        this.time.addEvent({
+                           delay: 30, loop: true, callback: () => {
+                              if (this.gameOver || this.gameWon) return;
+                              angle += 0.04;
+                              barBalls.forEach((ball, i) => {
+                                 const dist = (i + 1) * 14;
+                                 ball.setPosition(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist);
+                              });
+                           }
+                        });
                         // Add collision via an enemy sprite that follows the end ball
                         const fireHitbox = this.enemies.create(x, y, 'firebar_ball') as Phaser.Physics.Arcade.Sprite;
                         (fireHitbox.body as any).allowGravity = false;
                         fireHitbox.setAlpha(0);
-                        this.time.addEvent({ delay: 30, loop: true, callback: () => {
-                           if (barBalls.length > 0) {
-                              const lastBall = barBalls[barBalls.length - 1];
-                              fireHitbox.setPosition(lastBall.x, lastBall.y);
+                        this.time.addEvent({
+                           delay: 30, loop: true, callback: () => {
+                              if (barBalls.length > 0) {
+                                 const lastBall = barBalls[barBalls.length - 1];
+                                 fireHitbox.setPosition(lastBall.x, lastBall.y);
+                              }
                            }
-                        }});
+                        });
                         break;
                      }
                      case 'lakitu': {
@@ -1661,12 +1691,14 @@ export default function PhaserGame({
                         lak.setData('dir', 30);
                         // Float and periodically drop spinies (goombas as stand-in)
                         this.tweens.add({ targets: lak, y: y - 20, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-                        this.time.addEvent({ delay: 3000 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
-                           if (!lak.active || this.gameOver || this.gameWon) return;
-                           const spiny = this.enemies.create(lak.x, lak.y + 16, 'enemy') as Phaser.Physics.Arcade.Sprite;
-                           (spiny.body as any).allowGravity = true;
-                           spiny.setVelocityX(Phaser.Math.Between(-60, 60));
-                        }});
+                        this.time.addEvent({
+                           delay: 3000 + Phaser.Math.Between(0, 1000), loop: true, callback: () => {
+                              if (!lak.active || this.gameOver || this.gameWon) return;
+                              const spiny = this.enemies.create(lak.x, lak.y + 16, 'enemy') as Phaser.Physics.Arcade.Sprite;
+                              (spiny.body as any).allowGravity = true;
+                              spiny.setVelocityX(Phaser.Math.Between(-60, 60));
+                           }
+                        });
                         break;
                      }
                      case 'chain_chomp': {
@@ -1675,13 +1707,15 @@ export default function PhaserGame({
                         chomp.setData('originX', x);
                         chomp.setData('originY', y);
                         // Lunge behavior
-                        this.time.addEvent({ delay: 1500 + Phaser.Math.Between(0, 500), loop: true, callback: () => {
-                           if (!chomp.active || this.gameOver || this.gameWon) return;
-                           // Lunge toward closest player direction
-                           const targetX = (this.p1 && this.p1.active) ? this.p1.x : x;
-                           const dir = targetX > x ? 1 : -1;
-                           this.tweens.add({ targets: chomp, x: x + dir * 64, duration: 300, yoyo: true, ease: 'Quad.easeOut' });
-                        }});
+                        this.time.addEvent({
+                           delay: 1500 + Phaser.Math.Between(0, 500), loop: true, callback: () => {
+                              if (!chomp.active || this.gameOver || this.gameWon) return;
+                              // Lunge toward closest player direction
+                              const targetX = (this.p1 && this.p1.active) ? this.p1.x : x;
+                              const dir = targetX > x ? 1 : -1;
+                              this.tweens.add({ targets: chomp, x: x + dir * 64, duration: 300, yoyo: true, ease: 'Quad.easeOut' });
+                           }
+                        });
                         break;
                      }
                      case 'ice_block': {
@@ -1756,75 +1790,77 @@ export default function PhaserGame({
                // Start level timer
                this.levelTimer = 120;
                if (this.timerEvent) this.timerEvent.destroy();
-               this.timerEvent = this.time.addEvent({ delay: 1000, loop: true, callback: () => {
-                  if (this.gameOver || this.gameWon || this.countingDown) return;
-                  this.levelTimer--;
-                  if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
-                     this.takeDamage(this.myPlayer);
+               this.timerEvent = this.time.addEvent({
+                  delay: 1000, loop: true, callback: () => {
+                     if (this.gameOver || this.gameWon || this.countingDown) return;
+                     this.levelTimer--;
+                     if (this.levelTimer < 0 && this.levelTimer % 30 === 0) {
+                        this.takeDamage(this.myPlayer);
+                     }
                   }
-               }});
+               });
             }
 
             musicPowerUp() { this.playPowerUpSound(); }
             playBrickSound() {
-                if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
-                const vol = sfxVolumeRef.current;
-                const now = this.audioCtx.currentTime;
-                const osc1 = this.audioCtx.createOscillator();
-                const gain1 = this.audioCtx.createGain();
-                osc1.type = 'square';
-                osc1.frequency.setValueAtTime(220, now);
-                osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08);
-                gain1.gain.setValueAtTime(0.35 * vol, now);
-                gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
-                osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
-                osc1.start(now); osc1.stop(now + 0.12);
+               if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
+               const vol = sfxVolumeRef.current;
+               const now = this.audioCtx.currentTime;
+               const osc1 = this.audioCtx.createOscillator();
+               const gain1 = this.audioCtx.createGain();
+               osc1.type = 'square';
+               osc1.frequency.setValueAtTime(220, now);
+               osc1.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+               gain1.gain.setValueAtTime(0.35 * vol, now);
+               gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
+               osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
+               osc1.start(now); osc1.stop(now + 0.12);
 
-                const osc2 = this.audioCtx.createOscillator();
-                const gain2 = this.audioCtx.createGain();
-                osc2.type = 'sawtooth';
-                osc2.frequency.setValueAtTime(600, now);
-                osc2.frequency.exponentialRampToValueAtTime(200, now + 0.07);
-                gain2.gain.setValueAtTime(0.2 * vol, now);
-                gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.07);
-                osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
-                osc2.start(now); osc2.stop(now + 0.07);
-             }
+               const osc2 = this.audioCtx.createOscillator();
+               const gain2 = this.audioCtx.createGain();
+               osc2.type = 'sawtooth';
+               osc2.frequency.setValueAtTime(600, now);
+               osc2.frequency.exponentialRampToValueAtTime(200, now + 0.07);
+               gain2.gain.setValueAtTime(0.2 * vol, now);
+               gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.07);
+               osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
+               osc2.start(now); osc2.stop(now + 0.07);
+            }
 
-             playBrickBreakSound() {
-                if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
-                const vol = sfxVolumeRef.current;
-                const now = this.audioCtx.currentTime;
-                const osc1 = this.audioCtx.createOscillator();
-                const gain1 = this.audioCtx.createGain();
-                osc1.type = 'square';
-                osc1.frequency.setValueAtTime(300, now);
-                osc1.frequency.exponentialRampToValueAtTime(50, now + 0.1);
-                gain1.gain.setValueAtTime(0.5 * vol, now);
-                gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.15);
-                osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
-                osc1.start(now); osc1.stop(now + 0.15);
+            playBrickBreakSound() {
+               if (!this.audioCtx || sfxVolumeRef.current <= 0) return;
+               const vol = sfxVolumeRef.current;
+               const now = this.audioCtx.currentTime;
+               const osc1 = this.audioCtx.createOscillator();
+               const gain1 = this.audioCtx.createGain();
+               osc1.type = 'square';
+               osc1.frequency.setValueAtTime(300, now);
+               osc1.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+               gain1.gain.setValueAtTime(0.5 * vol, now);
+               gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.15);
+               osc1.connect(gain1); gain1.connect(this.audioCtx.destination);
+               osc1.start(now); osc1.stop(now + 0.15);
 
-                const osc2 = this.audioCtx.createOscillator();
-                const gain2 = this.audioCtx.createGain();
-                osc2.type = 'sawtooth';
-                osc2.frequency.setValueAtTime(900, now);
-                osc2.frequency.exponentialRampToValueAtTime(150, now + 0.08);
-                gain2.gain.setValueAtTime(0.35 * vol, now);
-                gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.08);
-                osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
-                osc2.start(now); osc2.stop(now + 0.08);
+               const osc2 = this.audioCtx.createOscillator();
+               const gain2 = this.audioCtx.createGain();
+               osc2.type = 'sawtooth';
+               osc2.frequency.setValueAtTime(900, now);
+               osc2.frequency.exponentialRampToValueAtTime(150, now + 0.08);
+               gain2.gain.setValueAtTime(0.35 * vol, now);
+               gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.08);
+               osc2.connect(gain2); gain2.connect(this.audioCtx.destination);
+               osc2.start(now); osc2.stop(now + 0.08);
 
-                const osc3 = this.audioCtx.createOscillator();
-                const gain3 = this.audioCtx.createGain();
-                osc3.type = 'sawtooth';
-                osc3.frequency.setValueAtTime(500, now + 0.04);
-                osc3.frequency.exponentialRampToValueAtTime(100, now + 0.12);
-                gain3.gain.setValueAtTime(0.25 * vol, now + 0.04);
-                gain3.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
-                osc3.connect(gain3); gain3.connect(this.audioCtx.destination);
-                osc3.start(now + 0.04); osc3.stop(now + 0.12);
-             }
+               const osc3 = this.audioCtx.createOscillator();
+               const gain3 = this.audioCtx.createGain();
+               osc3.type = 'sawtooth';
+               osc3.frequency.setValueAtTime(500, now + 0.04);
+               osc3.frequency.exponentialRampToValueAtTime(100, now + 0.12);
+               gain3.gain.setValueAtTime(0.25 * vol, now + 0.04);
+               gain3.gain.exponentialRampToValueAtTime(0.00001, now + 0.12);
+               osc3.connect(gain3); gain3.connect(this.audioCtx.destination);
+               osc3.start(now + 0.04); osc3.stop(now + 0.12);
+            }
             hitBlock(player: any, block: any) { if (!player.body.touching.up || !block.body?.touching.down || block.y >= 430) return; const now = Date.now(); if (block.getData('lastBump') && now - block.getData('lastBump') < 300) return; block.setData('lastBump', now); if (player.getData('isBig')) { this.playBlockBreakSound(); this.addScore(200); const bx = block.x; const by = block.y; const debrisColors = [0xc84c0c, 0xfc9838, 0x7c3800]; for (let i = 0; i < 4; i++) { const chunk = this.add.rectangle(bx + (i % 2 === 0 ? -8 : 8), by + (i < 2 ? -4 : 4), 10, 10, debrisColors[i % debrisColors.length]); const vx = (i % 2 === 0 ? -1 : 1) * Phaser.Math.Between(80, 160); const vy = i < 2 ? -Phaser.Math.Between(200, 340) : -Phaser.Math.Between(80, 180); this.tweens.add({ targets: chunk, x: chunk.x + vx * 0.6, y: chunk.y + vy * 0.5, angle: Phaser.Math.Between(-180, 180), alpha: 0, duration: 380, ease: 'Quad.easeIn', onComplete: () => chunk.destroy() }); } block.destroy(); } else { this.playBrickSound(); const origY = block.y; this.tweens.add({ targets: block, y: origY - 8, duration: 60, yoyo: true, ease: 'Quad.easeOut', onComplete: () => { block.y = origY; block.refreshBody(); } }); } }
             hitQBlock(player: any, block: any) { if (player.body.touching.up && block.body?.touching.down && block.getData('active')) { block.setData('active', false); block.setTexture('qblock_empty'); this.playPowerUpSound(); const is1Up = block.getData('force1Up'); if (is1Up) { const mush = this.mushrooms.create(block.x, block.y - 28, 'mushroom_1up') as Phaser.Physics.Arcade.Sprite; mush.setData('is1Up', true); mush.setVelocityX(80); mush.setBounceX(1); mush.setCollideWorldBounds(true); return; } const roll = Math.random(); let tex: string; let itemType: string; if (roll < 0.35) { tex = 'power_mushroom'; itemType = 'power'; } else if (roll < 0.55) { tex = 'invincibility_star'; itemType = 'star'; } else if (roll < 0.75) { tex = 'fire_flower'; itemType = 'fire_flower'; } else { tex = 'mushroom'; itemType = 'power'; } const item = this.mushrooms.create(block.x, block.y - 28, tex) as Phaser.Physics.Arcade.Sprite; item.setData('itemType', itemType); item.setVelocityX(itemType === 'star' ? 120 : 80); item.setBounceX(1); item.setCollideWorldBounds(true); if (itemType === 'star') { item.setBounceY(0.8); } } }
             collectMushroom(player: any, mush: any) { if (!mush.active) return; const itemType = mush.getData('itemType') || (mush.getData('is1Up') ? '1up' : 'power'); mush.destroy(); this.addScore(1000); if (itemType === '1up') { this.play1UpSound(); if (this.hearts < 20) { this.hearts++; this.show1Up(); } this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } else if (itemType === 'poison') { if (player === this.myPlayer) this.takeDamage(player); } else if (itemType === 'star') { this.playStarSound(); this.activateStarPower(player); } else if (itemType === 'fire_flower') { this.playBigSound(); player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.givefirePower(player); } else { this.playBigSound(); player.setData('isBig', true); this.isBig = true; player.y -= 10; player.setScale(1.4); this.tweens.add({ targets: player, alpha: 0.3, yoyo: true, repeat: 3, duration: 80, onComplete: () => player.setAlpha(1) }); } }
@@ -1854,7 +1890,7 @@ export default function PhaserGame({
                const sy = this.myPlayer.y;
                this.spawnFireball(sx, sy, dir, role);
                // Tell the other player to spawn the same fireball
-               try { socket.emit('shootFireball', { x: sx, y: sy, dir, owner: role }); } catch (e) {}
+               try { socket.emit('shootFireball', { x: sx, y: sy, dir, owner: role }); } catch (e) { }
             }
 
             spawnFireball(sx: number, sy: number, dir: number, owner: string) {
@@ -1908,9 +1944,9 @@ export default function PhaserGame({
                this.tweens.add({ targets: piranha, alpha: 0, scaleY: 0.2, duration: 350, onComplete: () => piranha.destroy() });
             }
             collectCoin(player: any, coin: any) { if (!coin.active) return; coin.destroy(); this.playCoinSound(); this.coinCount++; this.addScore(300); if (this.coinCount >= 100) { this.coinCount = 0; if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
-             addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
-             show1Up(remote: boolean = false) { this.play1UpSound(); if (!remote) { try { socket.emit('oneUp'); socket.emit('syncHearts', this.hearts); } catch (e) {} } const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
-             hitEnemy(player: any, enemy: any) { if (player.getData('starPower')) { enemy.destroy(); this.playStompSound(); this.addScore(1000); return; } if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
+            addScore(pts: number) { const oldScore = this.score; this.score += pts; if (Math.floor(this.score / 50000) > Math.floor(oldScore / 50000)) { if (this.hearts < 20) { this.hearts++; this.show1Up(); } } }
+            show1Up(remote: boolean = false) { this.play1UpSound(); if (!remote) { try { socket.emit('oneUp'); socket.emit('syncHearts', this.hearts); } catch (e) { } } const txt = this.add.text(400, 200, '1UP', { fontSize: '48px', color: '#00ff00', stroke: '#000', strokeThickness: 4, fontStyle: 'bold' }).setOrigin(0.5).setScrollFactor(0).setDepth(500); this.tweens.add({ targets: txt, y: 150, alpha: 0, duration: 1200, onComplete: () => txt.destroy() }); }
+            hitEnemy(player: any, enemy: any) { if (player.getData('starPower')) { enemy.destroy(); this.playStompSound(); this.addScore(1000); return; } if (player.body.touching.down && enemy.body.touching.up) { if (enemy.getData('isBoss')) { let hp = enemy.getData('bossHP') - 1; enemy.setData('bossHP', hp); this.playStompSound(); player.setVelocityY(-500); enemy.setAlpha(0.5); this.time.delayedCall(200, () => { if (enemy.active) enemy.setAlpha(1); }); this.addScore(1000); const barFill = enemy.getData('barFill'); if (barFill) { barFill.width = Math.max(0, (hp / 20) * 300); } if (hp <= 0) { const barBg = enemy.getData('barBg'); const barText = enemy.getData('barText'); if (barFill) barFill.destroy(); if (barBg) barBg.destroy(); if (barText) barText.destroy(); enemy.destroy(); if (this.level === 5) { this.playKilledBrowserSound(); } else { this.playVictorySound(); } this.gameWon = true; this.showHugAnimation(); } } else { enemy.destroy(); player.setVelocityY(-400); this.playStompSound(); this.addScore(1000); } } else if (player.body.touching.up && enemy.body.touching.down) { if (player === this.myPlayer) this.takeDamage(player); } else { if (enemy.getData('isBoss') && player.body.velocity.y < 0) return; if (player === this.myPlayer) this.takeDamage(player); } }
 
             showHugAnimation() {
                // Both players run toward each other
@@ -1923,31 +1959,37 @@ export default function PhaserGame({
                const floorY = this.p1.y;
                // Run toward each other
                this.tweens.add({ targets: this.p1, x: meetX - 5, duration: 1500, ease: 'Linear' });
-               this.tweens.add({ targets: this.p2, x: meetX + 5, duration: 1500, ease: 'Linear', onComplete: () => {
-                  // Stop running, face each other
-                  this.p1.anims.stop(); this.p2.anims.stop();
-                  this.p1.setFlipX(true); this.p2.setFlipX(false);
-                  this.p1.setTexture('p1_run1'); this.p2.setTexture('p2_run1');
-                  // Small jump together (fall on floor moment)
-                  this.tweens.add({ targets: [this.p1, this.p2], y: floorY - 30, duration: 200, yoyo: true, ease: 'Quad.easeOut', onComplete: () => {
-                     // Hearts floating up
-                     this.time.addEvent({ delay: 300, repeat: 10, callback: () => {
-                        const hx = meetX + Phaser.Math.Between(-30, 30);
-                        const heart = this.add.text(hx, floorY - 20, '❤️', { fontSize: '24px' }).setDepth(100);
-                        this.tweens.add({ targets: heart, y: floorY - 100, alpha: 0, duration: 1500, onComplete: () => heart.destroy() });
-                     }});
-                     // Trigger custom save game event
-                     window.dispatchEvent(new CustomEvent('marioGameWon', {
-                        detail: {
-                           score: this.score,
-                           hearts: this.hearts,
-                           coinCount: this.coinCount
+               this.tweens.add({
+                  targets: this.p2, x: meetX + 5, duration: 1500, ease: 'Linear', onComplete: () => {
+                     // Stop running, face each other
+                     this.p1.anims.stop(); this.p2.anims.stop();
+                     this.p1.setFlipX(true); this.p2.setFlipX(false);
+                     this.p1.setTexture('p1_run1'); this.p2.setTexture('p2_run1');
+                     // Small jump together (fall on floor moment)
+                     this.tweens.add({
+                        targets: [this.p1, this.p2], y: floorY - 30, duration: 200, yoyo: true, ease: 'Quad.easeOut', onComplete: () => {
+                           // Hearts floating up
+                           this.time.addEvent({
+                              delay: 300, repeat: 10, callback: () => {
+                                 const hx = meetX + Phaser.Math.Between(-30, 30);
+                                 const heart = this.add.text(hx, floorY - 20, '❤️', { fontSize: '24px' }).setDepth(100);
+                                 this.tweens.add({ targets: heart, y: floorY - 100, alpha: 0, duration: 1500, onComplete: () => heart.destroy() });
+                              }
+                           });
+                           // Trigger custom save game event
+                           window.dispatchEvent(new CustomEvent('marioGameWon', {
+                              detail: {
+                                 score: this.score,
+                                 hearts: this.hearts,
+                                 coinCount: this.coinCount
+                              }
+                           }));
+                           // After celebration moment, show birthday
+                           this.time.delayedCall(2500, () => this.showBirthdayCelebration());
                         }
-                     }));
-                     // After celebration moment, show birthday
-                     this.time.delayedCall(2500, () => this.showBirthdayCelebration());
-                  }});
-               }});
+                     });
+                  }
+               });
             }
 
             showBirthdayCelebration() {
@@ -1976,34 +2018,40 @@ export default function PhaserGame({
 
                // Glitter/confetti particles
                const colors = [0xff69b4, 0xffd700, 0x00ff00, 0xff4500, 0x00bfff, 0xff1493, 0x7fff00, 0xff6347, 0xee82ee, 0xffa500];
-               this.time.addEvent({ delay: 80, repeat: 150, callback: () => {
-                  const gx = Phaser.Math.Between(50, 750); const gy = Phaser.Math.Between(-20, 0);
-                  const color = colors[Phaser.Math.Between(0, colors.length - 1)];
-                  const size = Phaser.Math.Between(3, 8);
-                  const glitter = this.add.rectangle(gx, gy, size, size, color).setScrollFactor(0).setDepth(55);
-                  const angle = Phaser.Math.Between(-30, 30);
-                  this.tweens.add({ targets: glitter, y: 500, x: gx + angle * 3, angle: Phaser.Math.Between(-180, 180), alpha: 0.3, duration: Phaser.Math.Between(2000, 4000), onComplete: () => glitter.destroy() });
-               }});
+               this.time.addEvent({
+                  delay: 80, repeat: 150, callback: () => {
+                     const gx = Phaser.Math.Between(50, 750); const gy = Phaser.Math.Between(-20, 0);
+                     const color = colors[Phaser.Math.Between(0, colors.length - 1)];
+                     const size = Phaser.Math.Between(3, 8);
+                     const glitter = this.add.rectangle(gx, gy, size, size, color).setScrollFactor(0).setDepth(55);
+                     const angle = Phaser.Math.Between(-30, 30);
+                     this.tweens.add({ targets: glitter, y: 500, x: gx + angle * 3, angle: Phaser.Math.Between(-180, 180), alpha: 0.3, duration: Phaser.Math.Between(2000, 4000), onComplete: () => glitter.destroy() });
+                  }
+               });
 
                // Balloons rising up
                const balloonColors = [0xff0000, 0xff69b4, 0xffd700, 0x00bfff, 0x9400d3, 0x00ff00, 0xff4500, 0xff1493];
-               this.time.addEvent({ delay: 300, repeat: 30, callback: () => {
-                  const bx = Phaser.Math.Between(50, 750); const by = 500;
-                  const bColor = balloonColors[Phaser.Math.Between(0, balloonColors.length - 1)];
-                  const balloon = this.add.ellipse(bx, by, 20, 26, bColor).setScrollFactor(0).setDepth(52);
-                  const string = this.add.line(0, 0, bx, by + 13, bx + Phaser.Math.Between(-5, 5), by + 35, 0xffffff).setScrollFactor(0).setDepth(52);
-                  const targetY = Phaser.Math.Between(-50, 100);
-                  const sway = Phaser.Math.Between(-40, 40);
-                  this.tweens.add({ targets: balloon, y: targetY, x: bx + sway, duration: Phaser.Math.Between(3000, 5000), ease: 'Sine.easeOut' });
-                  this.tweens.add({ targets: string, y: targetY - by + 13, x: sway, duration: Phaser.Math.Between(3000, 5000), ease: 'Sine.easeOut', onComplete: () => { string.destroy(); } });
-               }});
+               this.time.addEvent({
+                  delay: 300, repeat: 30, callback: () => {
+                     const bx = Phaser.Math.Between(50, 750); const by = 500;
+                     const bColor = balloonColors[Phaser.Math.Between(0, balloonColors.length - 1)];
+                     const balloon = this.add.ellipse(bx, by, 20, 26, bColor).setScrollFactor(0).setDepth(52);
+                     const string = this.add.line(0, 0, bx, by + 13, bx + Phaser.Math.Between(-5, 5), by + 35, 0xffffff).setScrollFactor(0).setDepth(52);
+                     const targetY = Phaser.Math.Between(-50, 100);
+                     const sway = Phaser.Math.Between(-40, 40);
+                     this.tweens.add({ targets: balloon, y: targetY, x: bx + sway, duration: Phaser.Math.Between(3000, 5000), ease: 'Sine.easeOut' });
+                     this.tweens.add({ targets: string, y: targetY - by + 13, x: sway, duration: Phaser.Math.Between(3000, 5000), ease: 'Sine.easeOut', onComplete: () => { string.destroy(); } });
+                  }
+               });
 
                // Sparkle stars
-               this.time.addEvent({ delay: 200, repeat: 60, callback: () => {
-                  const sx = Phaser.Math.Between(50, 750); const sy = Phaser.Math.Between(50, 430);
-                  const sparkle = this.add.star(sx, sy, 5, 3, 8, 0xffffff).setScrollFactor(0).setDepth(53).setAlpha(0);
-                  this.tweens.add({ targets: sparkle, alpha: 1, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true, onComplete: () => sparkle.destroy() });
-               }});
+               this.time.addEvent({
+                  delay: 200, repeat: 60, callback: () => {
+                     const sx = Phaser.Math.Between(50, 750); const sy = Phaser.Math.Between(50, 430);
+                     const sparkle = this.add.star(sx, sy, 5, 3, 8, 0xffffff).setScrollFactor(0).setDepth(53).setAlpha(0);
+                     this.tweens.add({ targets: sparkle, alpha: 1, scaleX: 1.5, scaleY: 1.5, duration: 300, yoyo: true, onComplete: () => sparkle.destroy() });
+                  }
+               });
 
                // Play celebration melody
                if (this.audioCtx) {
@@ -2036,8 +2084,42 @@ export default function PhaserGame({
                socket.emit('checkpointTouched', playerRole);
                this.playCoinSound();
             }
-            createJoystick() {}
-            takeDamage(player: any) { if (player.getData('starPower')) return; if (player.alpha !== 1 || this.gameOver || this.gameWon) return; this.playHurtSound(); if (player.getData('fireOutfit')) { player.setData('fireOutfit', false); if (player === this.myPlayer) { this.hasFire = false; if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff')); } player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } if (player.getData('isBig')) { player.setData('isBig', false); this.isBig = false; player.setScale(1); player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); return; } this.hearts--; socket.emit('syncHearts', this.hearts); if (this.hearts <= 0) { this.playGameOverSound(); this.gameOver = true; socket.emit('gameOver', { heartsGone: true }); this.deathAnimation(player); } else { player.setAlpha(0.5); this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) }); player.setVelocityY(-350); } }
+            createJoystick() { }
+            takeDamage(player: any) {
+               // Only process damage for the local player — the other player manages their own health.
+               if (player !== this.myPlayer) return;
+               if (player.getData('starPower')) return;
+               if (player.alpha !== 1 || this.gameOver || this.gameWon) return;
+               this.playHurtSound();
+               if (player.getData('fireOutfit')) {
+                  player.setData('fireOutfit', false);
+                  this.hasFire = false;
+                  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('marioFirePowerOff'));
+                  player.setAlpha(0.5);
+                  this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) });
+                  return;
+               }
+               if (player.getData('isBig')) {
+                  player.setData('isBig', false);
+                  this.isBig = false;
+                  player.setScale(1);
+                  player.setAlpha(0.5);
+                  this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) });
+                  return;
+               }
+               this.hearts--;
+               socket.emit('syncHearts', this.hearts);
+               if (this.hearts <= 0) {
+                  this.playGameOverSound();
+                  this.gameOver = true;
+                  socket.emit('gameOver', { heartsGone: true });
+                  this.deathAnimation(player);
+               } else {
+                  player.setAlpha(0.5);
+                  this.tweens.add({ targets: player, alpha: 0, yoyo: true, repeat: 5, duration: 100, onComplete: () => player.setAlpha(1) });
+                  player.setVelocityY(-350);
+               }
+            }
 
             deathAnimation(player: any) {
                player.setVelocity(0, 0); (player.body as any).allowGravity = false;
@@ -2048,12 +2130,16 @@ export default function PhaserGame({
                player.setTexture(`${pRole}_death`);
                player.anims.stop();
                // Enlarge briefly
-               this.tweens.add({ targets: player, scaleX: 2, scaleY: 2, duration: 300, onComplete: () => {
-                  // Jump up then fall down below screen
-                  this.tweens.add({ targets: player, y: player.y - 120, duration: 400, ease: 'Quad.easeOut', onComplete: () => {
-                     this.tweens.add({ targets: player, y: 700, duration: 900, ease: 'Quad.easeIn' });
-                  }});
-               }});
+               this.tweens.add({
+                  targets: player, scaleX: 2, scaleY: 2, duration: 300, onComplete: () => {
+                     // Jump up then fall down below screen
+                     this.tweens.add({
+                        targets: player, y: player.y - 120, duration: 400, ease: 'Quad.easeOut', onComplete: () => {
+                           this.tweens.add({ targets: player, y: 700, duration: 900, ease: 'Quad.easeIn' });
+                        }
+                     });
+                  }
+               });
                // The button/text UI is shown by the socket handlers (gameOver -> restart, offerRespawn -> respawn).
             }
 
@@ -2147,9 +2233,9 @@ export default function PhaserGame({
             triggerWarp(wz: { x: number; y: number; w: number; destX: number; destY: number; sound: boolean }) {
                if (this.warping) return;
                this.warping = true;
-               if (wz.sound) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) {} }
+               if (wz.sound) { try { this.sound.play('sfx_pipe', { volume: sfxVolumeRef.current }); } catch (e) { } }
                // Tell the other client to warp too (keep co-op in sync)
-               try { socket.emit('warp', { destX: wz.destX, destY: wz.destY }); } catch (e) {}
+               try { socket.emit('warp', { destX: wz.destX, destY: wz.destY }); } catch (e) { }
                this.doWarp(wz.destX, wz.destY);
             }
 
@@ -2180,21 +2266,42 @@ export default function PhaserGame({
                if (this.countingDown) return;
 
                this.movingPlatforms.getChildren().forEach((p: any) => {
-                  const originX = p.getData('originX'); const range = p.getData('range'); let speed = p.getData('speed');
-                  if (p.x < originX - range && speed < 0) { speed = Math.abs(speed); p.setData('speed', speed); }
-                  else if (p.x > originX + range && speed > 0) { speed = -Math.abs(speed); p.setData('speed', speed); }
-                  (p.body as any).setVelocityX(speed);
-                  // Carry players standing on this platform
-                  [this.p1, this.p2].forEach(plr => {
-                     if (plr.body.touching.down) {
-                        const pBounds = p.getBounds();
-                        const plrBottom = plr.y + plr.body.height / 2;
-                        const platTop = pBounds.y;
-                        if (Math.abs(plrBottom - platTop) < 10 && plr.x > pBounds.x && plr.x < pBounds.x + pBounds.width) {
-                           plr.x += speed / 60;
-                        }
+                  const originX = p.getData('originX');
+                  const range = p.getData('range');
+                  const speed = p.getData('speed');
+                  if (!range || !speed) return;
+
+                  // Use wall-clock time so both clients are perfectly in sync without any network messages.
+                  const absSpeed = Math.abs(speed);
+                  const sign = Math.sign(speed);
+                  const period = (4 * range * 1000) / absSpeed; // full back-and-forth period in ms
+                  const t = (Date.now() % period) / period; // 0..1 position in the cycle
+
+                  let factor: number;
+                  let currentVel: number;
+                  if (t < 0.25) {
+                     factor = t / 0.25;           // 0 → +1
+                     currentVel = absSpeed;
+                  } else if (t < 0.75) {
+                     factor = 1 - (t - 0.25) / 0.25; // +1 → -1
+                     currentVel = -absSpeed;
+                  } else {
+                     factor = -1 + (t - 0.75) / 0.25; // -1 → 0
+                     currentVel = absSpeed;
+                  }
+
+                  p.x = originX + factor * range * sign;
+                  (p.body as any).setVelocityX(currentVel * sign);
+
+                  // Carry only the local player — remote player position is managed by their own client.
+                  const plr = this.myPlayer;
+                  if (plr.body.touching.down) {
+                     const pBounds = p.getBounds();
+                     const plrBottom = plr.y + plr.body.height / 2;
+                     if (Math.abs(plrBottom - pBounds.y) < 10 && plr.x > pBounds.x && plr.x < pBounds.x + pBounds.width) {
+                        plr.x += (currentVel * sign) / 60;
                      }
-                  });
+                  }
                });
 
                this.clouds.getChildren().forEach((c: any) => { c.x -= c.getData('speed') * 0.02; if (c.x < -200) c.x = 10000; });
@@ -2246,7 +2353,8 @@ export default function PhaserGame({
                let animState = 'run1';
                const skin = this.hasFire ? 'fire_' : '';
 
-               if (isCrouch && onGround) { this.myPlayer.setVelocityX(0); this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18); animState = 'crouch'; this.myPlayer.anims.stop();
+               if (isCrouch && onGround) {
+                  this.myPlayer.setVelocityX(0); this.myPlayer.setBodySize(18, 16); this.myPlayer.setOffset(4, 18); animState = 'crouch'; this.myPlayer.anims.stop();
                   // Warp pipe: if crouching on a warp zone, trigger the warp
                   if (!this.warping) {
                      for (const wz of this.warpZones) {
@@ -2300,7 +2408,7 @@ export default function PhaserGame({
                      if (!e.getData('cameraTriggered') && this.myPlayer.x > 4400 && this.level === 5 && !this.gameOver && !this.gameWon) {
                         e.setData('cameraTriggered', true);
                         e.setData('autoScrollActive', true);
-                         
+
                         // Stop current level 5 BGM and play browsercontact track
                         if (this.currentBgm) {
                            this.currentBgm.stop();
@@ -2360,7 +2468,7 @@ export default function PhaserGame({
          isDestroyed = true; if (game) game.destroy(true); if (socket) socket.disconnect();
          document.removeEventListener('selectstart', preventSelect);
          document.removeEventListener('contextmenu', preventSelect);
-         if (typeof window !== 'undefined') { const all = window.setInterval(() => {}, 9999); for (let i = 0; i <= all; i++) window.clearInterval(i); }
+         if (typeof window !== 'undefined') { const all = window.setInterval(() => { }, 9999); for (let i = 0; i <= all; i++) window.clearInterval(i); }
       };
    }, [role]);
 
